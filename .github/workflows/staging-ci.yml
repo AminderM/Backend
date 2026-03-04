@@ -119,46 +119,43 @@ jobs:
             
             # Restart the server
             echo "🔄 Restarting server..."
-            # Try different restart methods
-            if command -v pm2 &> /dev/null; then
-              # Determine Python interpreter
-              PYTHON_CMD="python3"
-              if [ -d "venv" ]; then
-                PYTHON_CMD="$(pwd)/venv/bin/python"
-                echo "Using venv Python: $PYTHON_CMD"
-              fi
-              
-              # Stop existing server process if it exists
-              pm2 delete server 2>/dev/null || true
-              
-              # Start server with correct Python interpreter and uvicorn
-              # PM2 format: pm2 start <script> --name <name> --interpreter <python> -- <uvicorn args>
-              pm2 start "$PYTHON_CMD" --name server -- -m uvicorn server:app --host 0.0.0.0 --port 8001 || \
-              pm2 start server.py --name server --interpreter "$PYTHON_CMD" || true
-              
-              # Save PM2 configuration
-              pm2 save || true
-            elif systemctl is-active --quiet backend.service; then
-              sudo systemctl restart backend.service
-            elif systemctl is-active --quiet fleet-marketplace.service; then
-              sudo systemctl restart fleet-marketplace.service
-            else
-              # Kill existing process on port 8001 and restart
-              pkill -f "uvicorn.*server.*8001" || true
-              sleep 2
-              # Use venv python if available, otherwise system python
-              if [ -d "venv" ]; then
-                nohup venv/bin/python -m uvicorn server:app --host 0.0.0.0 --port 8001 > nohup.out 2>&1 &
-              else
-                nohup python3 -m uvicorn server:app --host 0.0.0.0 --port 8001 > nohup.out 2>&1 &
-              fi
+            
+            # Determine Python interpreter
+            PYTHON_CMD="python3"
+            if [ -d "venv" ]; then
+              PYTHON_CMD="$(pwd)/venv/bin/python"
+              echo "Using venv Python: $PYTHON_CMD"
             fi
+            
+            # Kill any existing server processes
+            echo "🛑 Stopping existing server processes..."
+            pkill -f "python.*server.py" || true
+            pkill -f "uvicorn.*server.*8001" || true
+            # Also try to stop PM2 server if it exists
+            if command -v pm2 &> /dev/null; then
+              pm2 delete server 2>/dev/null || true
+            fi
+            
+            # Wait a moment for processes to stop
+            sleep 2
+            
+            # Start server using nohup (as you do manually)
+            echo "🚀 Starting server with nohup..."
+            nohup $PYTHON_CMD server.py > nohup.out 2>&1 &
+            
+            # Get the process ID
+            SERVER_PID=$!
+            echo "✅ Server started with PID: $SERVER_PID"
             
             # Wait a moment for server to start
             sleep 3
-            echo "📊 Server status:"
-            if command -v pm2 &> /dev/null; then
-              pm2 status server || true
+            
+            # Check if server is still running
+            if ps -p $SERVER_PID > /dev/null 2>&1; then
+              echo "✅ Server process is running (PID: $SERVER_PID)"
+            else
+              echo "⚠️ Server process may have crashed. Checking nohup.out..."
+              tail -20 nohup.out || true
             fi
             
             echo "✅ Deployment completed!"

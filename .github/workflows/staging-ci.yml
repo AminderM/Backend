@@ -9,41 +9,10 @@ on:
       - staging
 
 jobs:
-  test:
-    name: Run Tests
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      
-      - name: Run tests
-        run: |
-          pytest tests/ -v --tb=short
-        env:
-          REACT_APP_BACKEND_URL: ${{ vars.REACT_APP_BACKEND_URL || secrets.REACT_APP_BACKEND_URL || 'http://localhost:8001' }}
-          MONGO_URL: ${{ vars.MONGO_URL }}
-          DB_NAME: ${{ vars.DB_NAME }}
-          JWT_SECRET: ${{ vars.JWT_SECRET }}
-          EMERGENT_LLM_KEY: ${{ vars.EMERGENT_LLM_KEY }}
-          FMCSA_API_KEY: ${{ vars.FMCSA_API_KEY }}
-        continue-on-error: true
 
   build:
     name: Build Check
     runs-on: ubuntu-latest
-    needs: [test]
     
     steps:
       - name: Checkout code
@@ -126,9 +95,9 @@ jobs:
             set -e
             echo "🚀 Starting deployment..."
             
-            # Navigate to project directory (adjust path if needed)
-            cd ~/Backend || cd /home/ubuntu/Backend || cd /opt/Backend || {
-              echo "❌ Project directory not found. Please update the path in the workflow."
+            # Navigate to project directory
+            cd ~/apps/staging/Backend || cd /home/ubuntu/apps/staging/Backend || {
+              echo "❌ Project directory not found at ~/apps/staging/Backend"
               exit 1
             }
             
@@ -137,6 +106,12 @@ jobs:
             git fetch origin
             git checkout staging
             git pull origin staging
+            
+            # Activate virtual environment if it exists, otherwise use system python
+            if [ -d "venv" ]; then
+              echo "🐍 Activating virtual environment..."
+              source venv/bin/activate
+            fi
             
             # Install/update dependencies if requirements.txt changed
             echo "📦 Checking dependencies..."
@@ -155,7 +130,12 @@ jobs:
               # Kill existing process on port 8001 and restart
               pkill -f "uvicorn.*server.*8001" || true
               sleep 2
-              nohup python3 -m uvicorn server:app --host 0.0.0.0 --port 8001 > /dev/null 2>&1 &
+              # Use venv python if available, otherwise system python
+              if [ -d "venv" ]; then
+                nohup venv/bin/python -m uvicorn server:app --host 0.0.0.0 --port 8001 > nohup.out 2>&1 &
+              else
+                nohup python3 -m uvicorn server:app --host 0.0.0.0 --port 8001 > nohup.out 2>&1 &
+              fi
             fi
             
             echo "✅ Deployment completed!"

@@ -101,6 +101,12 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+# Root endpoint
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {"message": "server is running"}
+
 # Include the API router in the main app
 app.include_router(api_router)
 

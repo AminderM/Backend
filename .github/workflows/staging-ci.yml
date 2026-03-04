@@ -121,7 +121,23 @@ jobs:
             echo "🔄 Restarting server..."
             # Try different restart methods
             if command -v pm2 &> /dev/null; then
-              pm2 restart server || pm2 start server.py --name server --interpreter python3 || true
+              # Determine Python interpreter
+              PYTHON_CMD="python3"
+              if [ -d "venv" ]; then
+                PYTHON_CMD="$(pwd)/venv/bin/python"
+                echo "Using venv Python: $PYTHON_CMD"
+              fi
+              
+              # Stop existing server process if it exists
+              pm2 delete server 2>/dev/null || true
+              
+              # Start server with correct Python interpreter and uvicorn
+              # PM2 format: pm2 start <script> --name <name> --interpreter <python> -- <uvicorn args>
+              pm2 start "$PYTHON_CMD" --name server -- -m uvicorn server:app --host 0.0.0.0 --port 8001 || \
+              pm2 start server.py --name server --interpreter "$PYTHON_CMD" || true
+              
+              # Save PM2 configuration
+              pm2 save || true
             elif systemctl is-active --quiet backend.service; then
               sudo systemctl restart backend.service
             elif systemctl is-active --quiet fleet-marketplace.service; then
@@ -138,6 +154,13 @@ jobs:
               fi
             fi
             
+            # Wait a moment for server to start
+            sleep 3
+            echo "📊 Server status:"
+            if command -v pm2 &> /dev/null; then
+              pm2 status server || true
+            fi
+            
             echo "✅ Deployment completed!"
             echo "🌐 Server should be available at http://${EC2_HOST}:8001/"
           EOF
@@ -145,13 +168,35 @@ jobs:
       - name: Verify deployment
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || vars.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER || vars.EC2_USER || 'ubuntu' }}
         run: |
           echo "⏳ Waiting for server to be ready..."
-          sleep 5
-          if curl -f -s http://${EC2_HOST}:8001/ > /dev/null; then
-            echo "✅ Server is responding!"
-            curl -s http://${EC2_HOST}:8001/ | head -20
-          else
-            echo "⚠️ Server might still be starting. Please check manually."
+          sleep 8
+          
+          # Check if EC2_HOST is set
+          if [ -z "${EC2_HOST}" ]; then
+            echo "⚠️ EC2_HOST not set, skipping verification"
+            exit 0
           fi
+          
+          # Try to verify server is responding
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if curl -f -s --max-time 5 http://${EC2_HOST}:8001/ > /dev/null 2>&1; then
+              echo "✅ Server is responding!"
+              echo "Response:"
+              curl -s --max-time 5 http://${EC2_HOST}:8001/ | head -5
+              exit 0
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              echo "⏳ Attempt $RETRY_COUNT/$MAX_RETRIES - Server not ready yet, waiting..."
+              sleep 3
+            fi
+          done
+          
+          # If still not responding, check PM2 status via SSH
+          echo "⚠️ Server might still be starting. Checking PM2 status..."
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} "cd ~/apps/staging/Backend && pm2 status server || echo 'PM2 not available'" || echo "Could not check PM2 status"
+          echo "⚠️ Please verify manually at http://${EC2_HOST}:8001/"
 

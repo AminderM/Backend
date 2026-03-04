@@ -100,3 +100,78 @@ jobs:
           find . -name "*.py" -type f -exec python -m py_compile {} \;
         continue-on-error: true
 
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY || vars.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST || vars.EC2_HOST }} >> ~/.ssh/known_hosts
+      
+      - name: Deploy to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || vars.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER || vars.EC2_USER || 'ubuntu' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'EOF'
+            set -e
+            echo "🚀 Starting deployment..."
+            
+            # Navigate to project directory (adjust path if needed)
+            cd ~/Backend || cd /home/ubuntu/Backend || cd /opt/Backend || {
+              echo "❌ Project directory not found. Please update the path in the workflow."
+              exit 1
+            }
+            
+            # Pull latest code from staging branch
+            echo "📥 Pulling latest code from staging branch..."
+            git fetch origin
+            git checkout staging
+            git pull origin staging
+            
+            # Install/update dependencies if requirements.txt changed
+            echo "📦 Checking dependencies..."
+            pip install -q -r requirements.txt
+            
+            # Restart the server
+            echo "🔄 Restarting server..."
+            # Try different restart methods
+            if command -v pm2 &> /dev/null; then
+              pm2 restart server || pm2 start server.py --name server --interpreter python3 || true
+            elif systemctl is-active --quiet backend.service; then
+              sudo systemctl restart backend.service
+            elif systemctl is-active --quiet fleet-marketplace.service; then
+              sudo systemctl restart fleet-marketplace.service
+            else
+              # Kill existing process on port 8001 and restart
+              pkill -f "uvicorn.*server.*8001" || true
+              sleep 2
+              nohup python3 -m uvicorn server:app --host 0.0.0.0 --port 8001 > /dev/null 2>&1 &
+            fi
+            
+            echo "✅ Deployment completed!"
+            echo "🌐 Server should be available at http://${EC2_HOST}:8001/"
+          EOF
+      
+      - name: Verify deployment
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || vars.EC2_HOST }}
+        run: |
+          echo "⏳ Waiting for server to be ready..."
+          sleep 5
+          if curl -f -s http://${EC2_HOST}:8001/ > /dev/null; then
+            echo "✅ Server is responding!"
+            curl -s http://${EC2_HOST}:8001/ | head -20
+          else
+            echo "⚠️ Server might still be starting. Please check manually."
+          fi
+

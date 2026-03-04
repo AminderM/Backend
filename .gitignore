@@ -29,3 +29,13 @@ migrate_*.py
 seed_*.py
 reset_admin.py
 *.md
+
+.env
+# CI/CD
+deploy.tar.gz
+build.tar.gz
+
+# PM2
+.pm2
+logs/
+*.log

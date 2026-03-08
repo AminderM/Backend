@@ -41,6 +41,7 @@ from routes import marketing_routes
 from routes import master_data_routes
 from routes import orders_routes
 from routes import vehicles_routes
+from routes import invoices_routes
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -81,6 +82,7 @@ api_router.include_router(marketing_routes.router)
 api_router.include_router(master_data_routes.router, prefix="/master-data", tags=["Master Data"])
 api_router.include_router(orders_routes.router, prefix="/operations", tags=["Orders & Shipments"])
 api_router.include_router(vehicles_routes.router, prefix="/fleet", tags=["Vehicles & Fleet"])
+api_router.include_router(invoices_routes.router, prefix="/billing", tags=["Invoices & Billing"])
 
 # WebSocket endpoint for real-time vehicle tracking
 @api_router.websocket("/ws/vehicle/{vehicle_id}")

@@ -29,3 +29,7 @@ migrate_*.py
 seed_*.py
 reset_admin.py
 *.md
+-e 
+# Environment files
+*.env
+*.env.*

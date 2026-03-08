@@ -237,6 +237,83 @@ async def get_vehicles_summary(
     }
 
 
+# =============================================================================
+# FLEET TRACKING (Real-time view) - MUST be before {vehicle_id} routes
+# =============================================================================
+
+@router.get("/vehicles/fleet-tracking", response_model=List[dict])
+async def get_fleet_tracking(
+    status: Optional[VehicleStatus] = None,
+    category: Optional[VehicleCategory] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Get real-time fleet tracking data"""
+    query = {}
+    
+    # Tenant isolation
+    if not is_platform_admin(current_user):
+        user_tenant = getattr(current_user, 'tenant_id', None) or getattr(current_user, 'company_id', None)
+        if user_tenant:
+            query["tenant_id"] = user_tenant
+    
+    if status:
+        query["status"] = status.value
+    else:
+        # Exclude inactive vehicles by default
+        query["status"] = {"$ne": "inactive"}
+    
+    if category:
+        query["category"] = category.value
+    
+    vehicles = await db.vehicles.find(
+        query,
+        {
+            "_id": 0, "id": 1, "unit_number": 1, "vehicle_type": 1, "category": 1,
+            "status": 1, "current_latitude": 1, "current_longitude": 1,
+            "last_location_update": 1, "assigned_driver_id": 1,
+            "current_shipment_id": 1, "year": 1, "make": 1, "model": 1
+        }
+    ).to_list(length=500)
+    
+    result = []
+    for v in vehicles:
+        # Get driver name if assigned
+        driver_name = None
+        if v.get("assigned_driver_id"):
+            driver = await db.users.find_one(
+                {"id": v["assigned_driver_id"]},
+                {"_id": 0, "full_name": 1}
+            )
+            if driver:
+                driver_name = driver.get("full_name")
+        
+        # Get current load info
+        load_number = None
+        if v.get("current_shipment_id"):
+            shipment = await db.shipments.find_one(
+                {"id": v["current_shipment_id"]},
+                {"_id": 0, "shipment_number": 1}
+            )
+            if shipment:
+                load_number = shipment.get("shipment_number")
+        
+        result.append({
+            "vehicle_id": v["id"],
+            "unit_number": v["unit_number"],
+            "vehicle_type": v["vehicle_type"],
+            "category": v.get("category", "power_unit"),
+            "year_make_model": format_year_make_model(v.get("year"), v.get("make"), v.get("model")),
+            "status": v["status"],
+            "latitude": v.get("current_latitude"),
+            "longitude": v.get("current_longitude"),
+            "last_update": v.get("last_location_update"),
+            "driver_name": driver_name,
+            "load_number": load_number
+        })
+    
+    return result
+
+
 @router.get("/vehicles/{vehicle_id}", response_model=dict)
 async def get_vehicle(
     vehicle_id: str,
@@ -781,80 +858,3 @@ async def get_vehicle_location_history(
     ).sort("recorded_at", -1).limit(limit).to_list(length=limit)
     
     return history
-
-
-# =============================================================================
-# FLEET TRACKING (Real-time view)
-# =============================================================================
-
-@router.get("/vehicles/fleet-tracking", response_model=List[dict])
-async def get_fleet_tracking(
-    status: Optional[VehicleStatus] = None,
-    category: Optional[VehicleCategory] = None,
-    current_user: User = Depends(get_current_user)
-):
-    """Get real-time fleet tracking data"""
-    query = {}
-    
-    # Tenant isolation
-    if not is_platform_admin(current_user):
-        user_tenant = getattr(current_user, 'tenant_id', None) or getattr(current_user, 'company_id', None)
-        if user_tenant:
-            query["tenant_id"] = user_tenant
-    
-    if status:
-        query["status"] = status.value
-    else:
-        # Exclude inactive vehicles by default
-        query["status"] = {"$ne": "inactive"}
-    
-    if category:
-        query["category"] = category.value
-    
-    vehicles = await db.vehicles.find(
-        query,
-        {
-            "_id": 0, "id": 1, "unit_number": 1, "vehicle_type": 1, "category": 1,
-            "status": 1, "current_latitude": 1, "current_longitude": 1,
-            "last_location_update": 1, "assigned_driver_id": 1,
-            "current_shipment_id": 1, "year": 1, "make": 1, "model": 1
-        }
-    ).to_list(length=500)
-    
-    result = []
-    for v in vehicles:
-        # Get driver name if assigned
-        driver_name = None
-        if v.get("assigned_driver_id"):
-            driver = await db.users.find_one(
-                {"id": v["assigned_driver_id"]},
-                {"_id": 0, "full_name": 1}
-            )
-            if driver:
-                driver_name = driver.get("full_name")
-        
-        # Get current load info
-        load_number = None
-        if v.get("current_shipment_id"):
-            shipment = await db.shipments.find_one(
-                {"id": v["current_shipment_id"]},
-                {"_id": 0, "shipment_number": 1}
-            )
-            if shipment:
-                load_number = shipment.get("shipment_number")
-        
-        result.append({
-            "vehicle_id": v["id"],
-            "unit_number": v["unit_number"],
-            "vehicle_type": v["vehicle_type"],
-            "category": v.get("category", "power_unit"),
-            "year_make_model": format_year_make_model(v.get("year"), v.get("make"), v.get("model")),
-            "status": v["status"],
-            "latitude": v.get("current_latitude"),
-            "longitude": v.get("current_longitude"),
-            "last_update": v.get("last_location_update"),
-            "driver_name": driver_name,
-            "load_number": load_number
-        })
-    
-    return result

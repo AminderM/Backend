@@ -38,6 +38,7 @@ from routes import bundle_routes
 from routes import accounting_routes
 from routes import analytics_routes
 from routes import marketing_routes
+from routes import master_data_routes
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -75,6 +76,7 @@ api_router.include_router(bundle_routes.router)
 api_router.include_router(accounting_routes.router)
 api_router.include_router(analytics_routes.router)
 api_router.include_router(marketing_routes.router)
+api_router.include_router(master_data_routes.router, prefix="/master-data", tags=["Master Data"])
 
 # WebSocket endpoint for real-time vehicle tracking
 @api_router.websocket("/ws/vehicle/{vehicle_id}")

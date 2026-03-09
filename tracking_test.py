@@ -6,7 +6,7 @@ import requests
 import json
 
 # Test configuration
-base_url = "https://5e2a63d0-abe8-4325-a9d8-8022eb861680.preview.emergentagent.com"
+base_url = "https://accessorial-charges.preview.emergentagent.com"
 headers = {'Content-Type': 'application/json'}
 
 def login():

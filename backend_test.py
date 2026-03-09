@@ -11,7 +11,7 @@ from datetime import datetime, date, timedelta
 import uuid
 
 class TMSVehiclesTester:
-    def __init__(self, base_url="https://5e2a63d0-abe8-4325-a9d8-8022eb861680.preview.emergentagent.com"):
+    def __init__(self, base_url="https://accessorial-charges.preview.emergentagent.com"):
         self.base_url = base_url.rstrip('/')
         self.token = None
         self.headers = {'Content-Type': 'application/json'}

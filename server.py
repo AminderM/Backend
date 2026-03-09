@@ -114,6 +114,36 @@ app.add_middleware(
 # Include the API router in the main app
 app.include_router(api_router)
 
+# Serve API documentation files
+DOCS_DIR = ROOT_DIR / "static" / "docs"
+if DOCS_DIR.exists():
+    @app.get("/api/docs/download/pdf")
+    async def download_api_docs_pdf():
+        """Download API documentation as PDF"""
+        return FileResponse(
+            DOCS_DIR / "API_DOCUMENTATION.pdf",
+            media_type="application/pdf",
+            filename="TMS_API_Documentation.pdf"
+        )
+    
+    @app.get("/api/docs/download/txt")
+    async def download_api_docs_txt():
+        """Download API documentation as TXT"""
+        return FileResponse(
+            DOCS_DIR / "API_DOCUMENTATION.txt",
+            media_type="text/plain",
+            filename="TMS_API_Documentation.txt"
+        )
+    
+    @app.get("/api/docs/download/md")
+    async def download_api_docs_md():
+        """Download API documentation as Markdown"""
+        return FileResponse(
+            DOCS_DIR / "API_DOCUMENTATION.md",
+            media_type="text/markdown",
+            filename="TMS_API_Documentation.md"
+        )
+
 # Serve marketing website static files under /api/site
 MARKETING_DIR = ROOT_DIR / "marketing-static"
 if MARKETING_DIR.exists():

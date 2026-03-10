@@ -143,6 +143,68 @@ if DOCS_DIR.exists():
             media_type="text/markdown",
             filename="TMS_API_Documentation.md"
         )
+    
+    @app.get("/api/docs/download/frontend-guide")
+    async def download_frontend_guide():
+        """Download complete Frontend Developer Guide"""
+        return FileResponse(
+            DOCS_DIR / "FRONTEND_DEVELOPER_GUIDE.md",
+            media_type="text/markdown",
+            filename="TMS_Frontend_Developer_Guide.md"
+        )
+    
+    @app.get("/api/docs/download/frontend-guide-txt")
+    async def download_frontend_guide_txt():
+        """Download Frontend Developer Guide as TXT"""
+        return FileResponse(
+            DOCS_DIR / "FRONTEND_DEVELOPER_GUIDE.txt",
+            media_type="text/plain",
+            filename="TMS_Frontend_Developer_Guide.txt"
+        )
+    
+    @app.get("/api/docs/download/user-management-pdf")
+    async def download_user_management_pdf():
+        """Download User Management Structure diagram"""
+        return FileResponse(
+            DOCS_DIR / "USER_MANAGEMENT_STRUCTURE.pdf",
+            media_type="application/pdf",
+            filename="TMS_User_Management_Structure.pdf"
+        )
+    
+    @app.get("/api/docs/list")
+    async def list_available_docs():
+        """List all available documentation files"""
+        return {
+            "documents": [
+                {
+                    "name": "Frontend Developer Guide",
+                    "description": "Complete guide for frontend developers including API reference, data models, and UI/UX requirements",
+                    "formats": ["md", "txt"],
+                    "download_urls": {
+                        "md": "/api/docs/download/frontend-guide",
+                        "txt": "/api/docs/download/frontend-guide-txt"
+                    }
+                },
+                {
+                    "name": "API Documentation",
+                    "description": "Detailed API endpoint reference",
+                    "formats": ["pdf", "md", "txt"],
+                    "download_urls": {
+                        "pdf": "/api/docs/download/pdf",
+                        "md": "/api/docs/download/md",
+                        "txt": "/api/docs/download/txt"
+                    }
+                },
+                {
+                    "name": "User Management Structure",
+                    "description": "Role hierarchy and workspace access diagram",
+                    "formats": ["pdf"],
+                    "download_urls": {
+                        "pdf": "/api/docs/download/user-management-pdf"
+                    }
+                }
+            ]
+        }
 
 # Serve marketing website static files under /api/site
 MARKETING_DIR = ROOT_DIR / "marketing-static"

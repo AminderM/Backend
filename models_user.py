@@ -332,6 +332,72 @@ class UserResponse(BaseModel):
 
 
 # =============================================================================
+# WORKSPACE ACCESS CONTROL
+# =============================================================================
+
+class Workspace(str, Enum):
+    """Available workspaces/modules in the TMS application"""
+    DASHBOARD = "dashboard"
+    DISPATCH = "dispatch"              # Dispatch Operations
+    SALES = "sales"                    # Sales / CRM
+    ACCOUNTING = "accounting"          # Accounting / Billing
+    HR = "hr"                          # HR / User Management
+    FLEET = "fleet"                    # Fleet Management
+    REPORTS = "reports"                # Reporting / Analytics
+    SETTINGS = "settings"              # Settings / Configuration
+    DRIVER_APP = "driver_app"          # Driver Mobile App
+    RATE_CARDS = "rate_cards"          # Rate Cards / Pricing
+
+
+# Workspace access by role - controls what users can SEE
+WORKSPACE_ACCESS_MAP = {
+    "platform_admin": [
+        Workspace.DASHBOARD, Workspace.DISPATCH, Workspace.SALES,
+        Workspace.ACCOUNTING, Workspace.HR, Workspace.FLEET,
+        Workspace.REPORTS, Workspace.SETTINGS, Workspace.DRIVER_APP,
+        Workspace.RATE_CARDS
+    ],
+    "admin": [
+        Workspace.DASHBOARD, Workspace.DISPATCH, Workspace.SALES,
+        Workspace.ACCOUNTING, Workspace.HR, Workspace.FLEET,
+        Workspace.REPORTS, Workspace.SETTINGS, Workspace.RATE_CARDS
+    ],
+    "manager": [
+        Workspace.DASHBOARD, Workspace.DISPATCH, Workspace.SALES,
+        Workspace.ACCOUNTING, Workspace.HR, Workspace.FLEET,
+        Workspace.REPORTS, Workspace.RATE_CARDS
+    ],
+    "dispatcher": [
+        Workspace.DASHBOARD, Workspace.DISPATCH, Workspace.FLEET,
+        Workspace.DRIVER_APP
+    ],
+    "billing": [
+        Workspace.DASHBOARD, Workspace.ACCOUNTING, Workspace.REPORTS,
+        Workspace.RATE_CARDS
+    ],
+    "driver": [
+        Workspace.DRIVER_APP
+    ],
+    "viewer": [
+        Workspace.DASHBOARD, Workspace.REPORTS
+    ],
+}
+
+
+def get_user_workspaces(role: str) -> List[str]:
+    """Get list of workspaces a user can access based on their role"""
+    normalized_role = normalize_role(role)
+    workspaces = WORKSPACE_ACCESS_MAP.get(normalized_role, [])
+    return [ws.value for ws in workspaces]
+
+
+def has_workspace_access(role: str, workspace: str) -> bool:
+    """Check if a role has access to a specific workspace"""
+    allowed = get_user_workspaces(role)
+    return workspace in allowed
+
+
+# =============================================================================
 # PERMISSION DEFINITIONS
 # =============================================================================
 

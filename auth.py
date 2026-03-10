@@ -10,7 +10,10 @@ from models_user import (
     normalize_role, 
     get_user_permissions, 
     has_permission,
-    ROLE_MIGRATION_MAP
+    ROLE_MIGRATION_MAP,
+    get_user_workspaces,
+    has_workspace_access,
+    Workspace
 )
 from database import db
 import os
@@ -245,4 +248,30 @@ def require_tenant_access(resource_tenant_id: str):
             )
         return current_user
     return tenant_checker
+
+
+# =============================================================================
+# WORKSPACE ACCESS CONTROL
+# =============================================================================
+
+def require_workspace(workspace: str):
+    """
+    Dependency factory to check if user has access to a workspace
+    Usage: Depends(require_workspace("dispatch"))
+    """
+    async def workspace_checker(current_user: User = Depends(get_current_user)):
+        role = get_normalized_role(current_user)
+        if not has_workspace_access(role, workspace):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied: You don't have access to the {workspace} workspace"
+            )
+        return current_user
+    return workspace_checker
+
+
+def get_workspaces_for_user(user: User) -> List[str]:
+    """Get list of workspaces a user can access"""
+    role = get_normalized_role(user)
+    return get_user_workspaces(role)
 

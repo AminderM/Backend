@@ -452,20 +452,28 @@ async def add_integration(tenant_id: str, payload: IntegrationCreate, current_us
     tenant = await db.companies.find_one({"id": tenant_id})
     return tenant.get("integrations", {"eld": []})
 
-    if current_user.role != UserRole.FLEET_OWNER:
+    if current_user.role not in [UserRole.FLEET_OWNER, UserRole.PLATFORM_ADMIN]:
         raise HTTPException(status_code=403, detail="Only fleet owners can view drivers")
     
-    drivers = await db.users.find({"fleet_owner_id": current_user.id}).to_list(length=None)
+    # Platform admin sees all drivers
+    if current_user.role == UserRole.PLATFORM_ADMIN:
+        drivers = await db.users.find({"role": UserRole.DRIVER}, {"_id": 0}).to_list(length=None)
+    else:
+        drivers = await db.users.find({"fleet_owner_id": current_user.id}, {"_id": 0}).to_list(length=None)
     return [User(**driver) for driver in drivers]
 
 @router.put("/drivers/{driver_id}", response_model=dict)
 async def update_driver(driver_id: str, driver_data: UserBase, current_user: User = Depends(get_current_user)):
-    # Only fleet owners can update drivers
-    if current_user.role != UserRole.FLEET_OWNER:
+    # Only fleet owners and platform admin can update drivers
+    if current_user.role not in [UserRole.FLEET_OWNER, UserRole.PLATFORM_ADMIN]:
         raise HTTPException(status_code=403, detail="Only fleet owners can update drivers")
     
-    # Find driver
-    driver = await db.users.find_one({"id": driver_id, "fleet_owner_id": current_user.id})
+    # Find driver - platform admin can access any driver
+    if current_user.role == UserRole.PLATFORM_ADMIN:
+        driver = await db.users.find_one({"id": driver_id})
+    else:
+        driver = await db.users.find_one({"id": driver_id, "fleet_owner_id": current_user.id})
+    
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
     
@@ -481,11 +489,16 @@ async def update_driver(driver_id: str, driver_data: UserBase, current_user: Use
 
 @router.delete("/drivers/{driver_id}")
 async def delete_driver(driver_id: str, current_user: User = Depends(get_current_user)):
-    # Only fleet owners can delete drivers
-    if current_user.role != UserRole.FLEET_OWNER:
+    # Only fleet owners and platform admin can delete drivers
+    if current_user.role not in [UserRole.FLEET_OWNER, UserRole.PLATFORM_ADMIN]:
         raise HTTPException(status_code=403, detail="Only fleet owners can delete drivers")
     
-    result = await db.users.delete_one({"id": driver_id, "fleet_owner_id": current_user.id})
+    # Platform admin can delete any driver
+    if current_user.role == UserRole.PLATFORM_ADMIN:
+        result = await db.users.delete_one({"id": driver_id})
+    else:
+        result = await db.users.delete_one({"id": driver_id, "fleet_owner_id": current_user.id})
+    
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Driver not found")
     

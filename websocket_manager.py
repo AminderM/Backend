@@ -137,6 +137,11 @@ class ConnectionManager:
     async def broadcast_new_visitor(self, visitor_data: dict):
         """Broadcast new visitor event to analytics dashboards"""
         await self.broadcast_analytics_update("new_visitor", visitor_data)
+        # Also send in frontend expected format
+        await self.broadcast_analytics_update("realtime_update", {
+            "active_visitors": visitor_data.get("active_count", 1),
+            "active_sessions": visitor_data.get("session_count", 1)
+        })
     
     async def broadcast_new_pageview(self, pageview_data: dict):
         """Broadcast new pageview event to analytics dashboards"""
@@ -145,10 +150,28 @@ class ConnectionManager:
     async def broadcast_new_conversion(self, conversion_data: dict):
         """Broadcast new conversion event to analytics dashboards"""
         await self.broadcast_analytics_update("new_conversion", conversion_data)
+        # Also send overview update
+        await self.broadcast_analytics_update("overview_update", {
+            "conversions": conversion_data.get("total_conversions", 1)
+        })
     
     async def broadcast_session_update(self, session_data: dict):
         """Broadcast session update to analytics dashboards"""
         await self.broadcast_analytics_update("session_update", session_data)
+    
+    async def broadcast_realtime_update(self, active_visitors: int, active_sessions: int):
+        """Broadcast real-time stats update in frontend expected format"""
+        await self.broadcast_analytics_update("realtime_update", {
+            "active_visitors": active_visitors,
+            "active_sessions": active_sessions
+        })
+    
+    async def broadcast_overview_update(self, total_visitors: int, conversions: int):
+        """Broadcast overview update in frontend expected format"""
+        await self.broadcast_analytics_update("overview_update", {
+            "total_visitors": total_visitors,
+            "conversions": conversions
+        })
     
     def get_analytics_connection_count(self) -> int:
         """Get number of connected analytics dashboards"""

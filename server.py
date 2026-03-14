@@ -46,6 +46,9 @@ load_dotenv(ROOT_DIR / '.env')
 # WebSocket Manager
 manager = ConnectionManager()
 
+# Set websocket manager for customer analytics real-time updates
+customer_analytics_routes.set_websocket_manager(manager)
+
 # Create the main app
 app = FastAPI(title="Fleet Marketplace API")
 
@@ -92,6 +95,23 @@ async def vehicle_websocket_endpoint(websocket: WebSocket, vehicle_id: str):
         pass
     finally:
         manager.disconnect_vehicle(websocket, vehicle_id)
+
+# WebSocket endpoint for real-time analytics dashboard
+@api_router.websocket("/ws/analytics")
+async def analytics_websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time analytics dashboard updates"""
+    await manager.connect_analytics(websocket)
+    try:
+        while True:
+            # Keep connection alive, handle any incoming messages
+            data = await websocket.receive_text()
+            # Echo back for ping/pong
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect_analytics(websocket)
 
 # CORS Middleware - must be added before routes
 app.add_middleware(

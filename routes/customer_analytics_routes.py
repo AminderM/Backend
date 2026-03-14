@@ -11,6 +11,15 @@ import asyncio
 
 router = APIRouter(prefix="/customer-analytics", tags=["Customer Analytics"])
 
+# Import websocket manager for real-time updates
+# This will be set by the main server module
+websocket_manager = None
+
+def set_websocket_manager(manager):
+    """Set the websocket manager for real-time broadcasts"""
+    global websocket_manager
+    websocket_manager = manager
+
 # ============================================================================
 # MODELS
 # ============================================================================
@@ -202,6 +211,20 @@ async def start_session(session_data: SessionStart):
         {"$inc": {"total_sessions": 1}}
     )
     
+    # Broadcast real-time update via WebSocket
+    if websocket_manager:
+        try:
+            await websocket_manager.broadcast_new_visitor({
+                "session_id": session_id,
+                "visitor_id": visitor_id,
+                "landing_page": session_data.landing_page,
+                "referrer": session_data.referrer,
+                "utm_source": session_data.utm_source,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+        except Exception:
+            pass  # Don't fail tracking if broadcast fails
+    
     return {
         "session_id": session_id,
         "visitor_id": visitor_id,
@@ -252,6 +275,19 @@ async def track_pageview(event: PageViewEvent):
         {"visitor_id": visitor_id},
         {"$inc": {"total_page_views": 1}}
     )
+    
+    # Broadcast real-time update via WebSocket
+    if websocket_manager:
+        try:
+            await websocket_manager.broadcast_new_pageview({
+                "page_url": event.page_url,
+                "page_title": event.page_title,
+                "session_id": event.session_id,
+                "visitor_id": visitor_id,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+        except Exception:
+            pass
     
     return {"status": "tracked", "visitor_id": visitor_id}
 
@@ -360,6 +396,21 @@ async def track_conversion(event: ConversionEvent):
                 "$set": {"last_activity": datetime.now(timezone.utc).isoformat()}
             }
         )
+    
+    # Broadcast real-time conversion update via WebSocket
+    if websocket_manager:
+        try:
+            await websocket_manager.broadcast_new_conversion({
+                "event_name": event.event_name,
+                "event_category": event.event_category,
+                "event_value": event.event_value,
+                "page_url": event.page_url,
+                "session_id": event.session_id,
+                "visitor_id": event.visitor_id,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+        except Exception:
+            pass
     
     return {"status": "tracked"}
 

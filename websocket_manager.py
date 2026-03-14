@@ -1,5 +1,5 @@
 """
-WebSocket connection manager for real-time fleet tracking
+WebSocket connection manager for real-time fleet tracking and analytics
 """
 from fastapi import WebSocket
 from typing import Dict, List, Set
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
-    """Manages WebSocket connections for fleet tracking"""
+    """Manages WebSocket connections for fleet tracking and analytics dashboard"""
     
     def __init__(self):
         # Fleet managers/dashboard connections
@@ -18,6 +18,9 @@ class ConnectionManager:
         
         # Vehicle/driver connections mapped by vehicle_id
         self.vehicle_connections: Dict[str, WebSocket] = {}
+        
+        # Analytics dashboard connections
+        self.analytics_connections: Set[WebSocket] = set()
     
     async def connect_fleet(self, websocket: WebSocket):
         """Connect a fleet manager/dashboard"""
@@ -96,3 +99,57 @@ class ConnectionManager:
     def is_vehicle_connected(self, vehicle_id: str) -> bool:
         """Check if a vehicle is currently connected"""
         return vehicle_id in self.vehicle_connections
+
+    # ============================================================================
+    # ANALYTICS DASHBOARD WEBSOCKET METHODS
+    # ============================================================================
+    
+    async def connect_analytics(self, websocket: WebSocket):
+        """Connect an analytics dashboard client"""
+        await websocket.accept()
+        self.analytics_connections.add(websocket)
+        logger.info(f"Analytics dashboard connected. Total connections: {len(self.analytics_connections)}")
+    
+    def disconnect_analytics(self, websocket: WebSocket):
+        """Disconnect an analytics dashboard client"""
+        self.analytics_connections.discard(websocket)
+        logger.info(f"Analytics dashboard disconnected. Total connections: {len(self.analytics_connections)}")
+    
+    async def broadcast_analytics_update(self, update_type: str, data: dict):
+        """Broadcast analytics update to all connected dashboards"""
+        message = json.dumps({
+            "type": update_type,
+            "payload": data
+        })
+        
+        disconnected = set()
+        for connection in self.analytics_connections:
+            try:
+                await connection.send_text(message)
+            except Exception as e:
+                logger.error(f"Error broadcasting analytics update: {e}")
+                disconnected.add(connection)
+        
+        # Clean up disconnected clients
+        for connection in disconnected:
+            self.analytics_connections.discard(connection)
+    
+    async def broadcast_new_visitor(self, visitor_data: dict):
+        """Broadcast new visitor event to analytics dashboards"""
+        await self.broadcast_analytics_update("new_visitor", visitor_data)
+    
+    async def broadcast_new_pageview(self, pageview_data: dict):
+        """Broadcast new pageview event to analytics dashboards"""
+        await self.broadcast_analytics_update("new_pageview", pageview_data)
+    
+    async def broadcast_new_conversion(self, conversion_data: dict):
+        """Broadcast new conversion event to analytics dashboards"""
+        await self.broadcast_analytics_update("new_conversion", conversion_data)
+    
+    async def broadcast_session_update(self, session_data: dict):
+        """Broadcast session update to analytics dashboards"""
+        await self.broadcast_analytics_update("session_update", session_data)
+    
+    def get_analytics_connection_count(self) -> int:
+        """Get number of connected analytics dashboards"""
+        return len(self.analytics_connections)

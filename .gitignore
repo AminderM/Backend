@@ -38,4 +38,7 @@ build.tar.gz
 # PM2
 .pm2
 logs/
-*.log
+*.log-e 
+# Environment files
+*.env
+*.env.*

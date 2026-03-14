@@ -444,3 +444,421 @@ async def get_heatmap_data(
         ],
         "click_points": click_points
     }
+
+
+
+# ============================================================================
+# EXPORT ENDPOINTS - CSV & PDF
+# ============================================================================
+
+from fastapi.responses import StreamingResponse
+import csv
+import io
+
+
+@router.get("/export/csv")
+async def export_csv(
+    data_type: str = Query(..., description="Type of data: sessions, pageviews, conversions, clicks"),
+    days: int = Query(default=30, ge=1, le=365),
+    current_user = Depends(get_current_user)
+):
+    """
+    Export analytics data as CSV file.
+    
+    Supported data types:
+    - sessions: Session data with visitor info, duration, bounce rate
+    - pageviews: Page view events with URLs and timestamps
+    - conversions: Conversion events with categories and values
+    - clicks: Click events for heatmap data
+    """
+    require_platform_admin(current_user)
+    
+    start_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    
+    # Define collection and fields for each data type
+    data_configs = {
+        "sessions": {
+            "collection": db.sessions,
+            "fields": ["session_id", "visitor_id", "started_at", "ended_at", "landing_page", 
+                      "referrer", "utm_source", "utm_medium", "utm_campaign", "page_views", 
+                      "duration_seconds", "is_active", "conversions"],
+            "date_field": "started_at",
+            "filename": f"analytics_sessions_{days}days.csv"
+        },
+        "pageviews": {
+            "collection": db.pageviews,
+            "fields": ["visitor_id", "session_id", "page_url", "page_title", "referrer",
+                      "utm_source", "utm_campaign", "timestamp"],
+            "date_field": "timestamp",
+            "filename": f"analytics_pageviews_{days}days.csv"
+        },
+        "conversions": {
+            "collection": db.conversion_events,
+            "fields": ["visitor_id", "session_id", "event_name", "event_category", 
+                      "event_value", "page_url", "timestamp"],
+            "date_field": "timestamp",
+            "filename": f"analytics_conversions_{days}days.csv"
+        },
+        "clicks": {
+            "collection": db.click_events,
+            "fields": ["visitor_id", "session_id", "page_url", "element_id", "element_tag",
+                      "element_text", "x_position", "y_position", "viewport_width", 
+                      "viewport_height", "timestamp"],
+            "date_field": "timestamp",
+            "filename": f"analytics_clicks_{days}days.csv"
+        }
+    }
+    
+    if data_type not in data_configs:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid data_type. Choose from: {list(data_configs.keys())}"
+        )
+    
+    config = data_configs[data_type]
+    
+    # Query data
+    query = {config["date_field"]: {"$gte": start_date}}
+    cursor = config["collection"].find(query, {"_id": 0})
+    data = await cursor.to_list(length=50000)  # Limit to 50k rows
+    
+    # Generate CSV
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=config["fields"], extrasaction='ignore')
+    writer.writeheader()
+    
+    for row in data:
+        # Clean row data
+        clean_row = {}
+        for field in config["fields"]:
+            value = row.get(field, "")
+            if isinstance(value, list):
+                value = "; ".join(str(v) for v in value)
+            clean_row[field] = value
+        writer.writerow(clean_row)
+    
+    output.seek(0)
+    
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={config['filename']}",
+            "Content-Type": "text/csv; charset=utf-8"
+        }
+    )
+
+
+@router.get("/export/pdf")
+async def export_pdf(
+    days: int = Query(default=30, ge=1, le=365),
+    current_user = Depends(get_current_user)
+):
+    """
+    Export analytics summary report as PDF.
+    
+    Includes:
+    - KPI summary (visitors, conversions, bounce rate, session duration)
+    - Daily traffic table
+    - Top pages
+    - Traffic sources
+    - Conversion breakdown
+    """
+    require_platform_admin(current_user)
+    
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    
+    now = datetime.now(timezone.utc)
+    start_date = (now - timedelta(days=days)).isoformat()
+    
+    # Gather all data
+    # 1. KPI Metrics
+    total_visitors = len(await db.sessions.distinct("visitor_id", {
+        "started_at": {"$gte": start_date}
+    }))
+    
+    total_sessions = await db.sessions.count_documents({
+        "started_at": {"$gte": start_date}
+    })
+    
+    total_conversions = await db.conversion_events.count_documents({
+        "timestamp": {"$gte": start_date}
+    })
+    
+    total_pageviews = await db.pageviews.count_documents({
+        "timestamp": {"$gte": start_date}
+    })
+    
+    single_page_sessions = await db.sessions.count_documents({
+        "started_at": {"$gte": start_date},
+        "page_views": 1
+    })
+    bounce_rate = (single_page_sessions / total_sessions * 100) if total_sessions > 0 else 0
+    
+    duration_pipeline = [
+        {"$match": {"started_at": {"$gte": start_date}, "duration_seconds": {"$gt": 0}}},
+        {"$group": {"_id": None, "avg_duration": {"$avg": "$duration_seconds"}}}
+    ]
+    duration_result = await db.sessions.aggregate(duration_pipeline).to_list(1)
+    avg_duration = int(duration_result[0]["avg_duration"]) if duration_result else 0
+    
+    conversion_rate = (total_conversions / total_sessions * 100) if total_sessions > 0 else 0
+    
+    # 2. Daily Traffic (last 7 days for PDF)
+    daily_data = []
+    for i in range(min(days, 14) - 1, -1, -1):
+        day_start = (now - timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+        day_start_iso = day_start.isoformat()
+        day_end_iso = day_end.isoformat()
+        
+        day_visitors = len(await db.sessions.distinct("visitor_id", {
+            "started_at": {"$gte": day_start_iso, "$lt": day_end_iso}
+        }))
+        day_pageviews = await db.pageviews.count_documents({
+            "timestamp": {"$gte": day_start_iso, "$lt": day_end_iso}
+        })
+        day_conversions = await db.conversion_events.count_documents({
+            "timestamp": {"$gte": day_start_iso, "$lt": day_end_iso}
+        })
+        
+        daily_data.append({
+            "date": day_start.strftime("%Y-%m-%d"),
+            "visitors": day_visitors,
+            "pageviews": day_pageviews,
+            "conversions": day_conversions
+        })
+    
+    # 3. Top Pages
+    page_pipeline = [
+        {"$match": {"timestamp": {"$gte": start_date}}},
+        {"$group": {"_id": "$page_url", "views": {"$sum": 1}}},
+        {"$sort": {"views": -1}},
+        {"$limit": 10}
+    ]
+    top_pages = await db.pageviews.aggregate(page_pipeline).to_list(10)
+    
+    # 4. Traffic Sources
+    source_pipeline = [
+        {"$match": {"started_at": {"$gte": start_date}}},
+        {"$group": {
+            "_id": {"$ifNull": ["$utm_source", "Direct"]},
+            "sessions": {"$sum": 1}
+        }},
+        {"$sort": {"sessions": -1}},
+        {"$limit": 10}
+    ]
+    traffic_sources = await db.sessions.aggregate(source_pipeline).to_list(10)
+    
+    # 5. Conversion Breakdown
+    conv_pipeline = [
+        {"$match": {"timestamp": {"$gte": start_date}}},
+        {"$group": {
+            "_id": "$event_category",
+            "count": {"$sum": 1},
+            "value": {"$sum": {"$ifNull": ["$event_value", 0]}}
+        }},
+        {"$sort": {"count": -1}}
+    ]
+    conversion_breakdown = await db.conversion_events.aggregate(conv_pipeline).to_list(10)
+    
+    # Generate PDF
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        spaceAfter=30,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor('#1a1a2e')
+    )
+    
+    section_style = ParagraphStyle(
+        'SectionTitle',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceBefore=20,
+        spaceAfter=10,
+        textColor=colors.HexColor('#16213e')
+    )
+    
+    normal_style = ParagraphStyle(
+        'CustomNormal',
+        parent=styles['Normal'],
+        fontSize=10,
+        spaceAfter=6
+    )
+    
+    elements = []
+    
+    # Title
+    elements.append(Paragraph("Web Analytics Report", title_style))
+    elements.append(Paragraph(
+        f"Period: {(now - timedelta(days=days)).strftime('%Y-%m-%d')} to {now.strftime('%Y-%m-%d')} ({days} days)",
+        normal_style
+    ))
+    elements.append(Paragraph(f"Generated: {now.strftime('%Y-%m-%d %H:%M UTC')}", normal_style))
+    elements.append(Spacer(1, 20))
+    
+    # KPI Summary
+    elements.append(Paragraph("Key Performance Indicators", section_style))
+    
+    kpi_data = [
+        ["Metric", "Value"],
+        ["Total Visitors", f"{total_visitors:,}"],
+        ["Total Sessions", f"{total_sessions:,}"],
+        ["Total Page Views", f"{total_pageviews:,}"],
+        ["Total Conversions", f"{total_conversions:,}"],
+        ["Conversion Rate", f"{conversion_rate:.2f}%"],
+        ["Bounce Rate", f"{bounce_rate:.1f}%"],
+        ["Avg. Session Duration", f"{avg_duration // 60}m {avg_duration % 60}s"],
+        ["Pages per Session", f"{(total_pageviews / total_sessions):.2f}" if total_sessions > 0 else "0"]
+    ]
+    
+    kpi_table = Table(kpi_data, colWidths=[3*inch, 2*inch])
+    kpi_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a1a2e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 11),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
+        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+        ('TOPPADDING', (0, 1), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+    ]))
+    elements.append(kpi_table)
+    elements.append(Spacer(1, 20))
+    
+    # Daily Traffic Table
+    if daily_data:
+        elements.append(Paragraph("Daily Traffic", section_style))
+        
+        traffic_table_data = [["Date", "Visitors", "Page Views", "Conversions"]]
+        for day in daily_data:
+            traffic_table_data.append([
+                day["date"],
+                str(day["visitors"]),
+                str(day["pageviews"]),
+                str(day["conversions"])
+            ])
+        
+        traffic_table = Table(traffic_table_data, colWidths=[1.5*inch, 1.2*inch, 1.2*inch, 1.2*inch])
+        traffic_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a1a2e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(traffic_table)
+        elements.append(Spacer(1, 20))
+    
+    # Top Pages
+    if top_pages:
+        elements.append(Paragraph("Top Pages", section_style))
+        
+        pages_table_data = [["Page URL", "Views"]]
+        for page in top_pages:
+            page_url = page["_id"] or "/"
+            if len(page_url) > 50:
+                page_url = page_url[:47] + "..."
+            pages_table_data.append([page_url, str(page["views"])])
+        
+        pages_table = Table(pages_table_data, colWidths=[4*inch, 1*inch])
+        pages_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a1a2e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(pages_table)
+        elements.append(Spacer(1, 20))
+    
+    # Traffic Sources
+    if traffic_sources:
+        elements.append(Paragraph("Traffic Sources", section_style))
+        
+        sources_table_data = [["Source", "Sessions"]]
+        for source in traffic_sources:
+            sources_table_data.append([source["_id"] or "Direct", str(source["sessions"])])
+        
+        sources_table = Table(sources_table_data, colWidths=[3*inch, 1.5*inch])
+        sources_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a1a2e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(sources_table)
+        elements.append(Spacer(1, 20))
+    
+    # Conversion Breakdown
+    if conversion_breakdown:
+        elements.append(Paragraph("Conversion Breakdown", section_style))
+        
+        conv_table_data = [["Category", "Count", "Value"]]
+        for conv in conversion_breakdown:
+            conv_table_data.append([
+                conv["_id"] or "Other",
+                str(conv["count"]),
+                f"${conv['value']:.2f}" if conv["value"] else "-"
+            ])
+        
+        conv_table = Table(conv_table_data, colWidths=[2.5*inch, 1*inch, 1.5*inch])
+        conv_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a1a2e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(conv_table)
+    
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    
+    filename = f"analytics_report_{now.strftime('%Y%m%d')}_{days}days.pdf"
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Content-Type": "application/pdf"
+        }
+    )

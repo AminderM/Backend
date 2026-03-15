@@ -127,10 +127,9 @@ async def get_current_company(current_user: User = Depends(get_current_user)):
     if not company:
         raise HTTPException(status_code=404, detail="No company found for this user")
 
+    # Remove _id if present
+    company.pop('_id', None)
     return Company(**company)
-
-    updated_company = await db.companies.find_one({"id": company["id"]})
-    return Company(**updated_company)
 
 @router.post("/my/upload-logo")
 async def upload_company_logo(

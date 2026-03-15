@@ -39,3 +39,18 @@ build.tar.gz
 .pm2
 logs/
 *.log
+-e 
+# Environment files
+*.env
+*.env.*
+-e 
+# Environment files
+*.env
+*.env.*
+-e 
+# Environment files
+*.env
+*.env.*
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore

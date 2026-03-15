@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Verification - Fleet Marketplace</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 0;
+            border: 1px solid #e0e0e0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .welcome-text {
+            font-size: 18px;
+            color: #1e293b;
+            margin-bottom: 20px;
+        }
+        .button {
+            display: inline-block;
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            margin: 25px 0;
+            font-weight: 600;
+            font-size: 16px;
+            transition: transform 0.2s;
+        }
+        .button:hover {
+            transform: translateY(-2px);
+        }
+        .url-fallback {
+            word-break: break-all;
+            background-color: #f8fafc;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #3b82f6;
+            font-family: monospace;
+            font-size: 14px;
+            margin: 20px 0;
+        }
+        .footer {
+            background-color: #f8fafc;
+            text-align: center;
+            padding: 25px;
+            font-size: 14px;
+            color: #64748b;
+            border-top: 1px solid #e2e8f0;
+        }
+        .icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        .warning-box {
+            background-color: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+            font-size: 14px;
+            color: #92400e;
+        }
+        .truck-icon {
+            font-size: 24px;
+            margin-right: 8px;
+            color: #3b82f6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="icon">🚛</div>
+            <h1>Welcome to Fleet Marketplace</h1>
+            <p style="margin: 10px 0 0 0; opacity: 0.9;">Your Supply Chain Connection Platform</p>
+        </div>
+        
+        <div class="content">
+            <h2 class="welcome-text">Hi {{ name }},</h2>
+            
+            <p>Thank you for joining Fleet Marketplace! You're now part of a comprehensive platform connecting manufacturers, fleet owners, construction companies, and warehouses.</p>
+            
+            <p>To complete your registration and start connecting with the supply chain ecosystem, please verify your email address by clicking the button below:</p>
+            
+            <div style="text-align: center;">
+                <a href="{{ verification_url }}" class="button">✓ Verify Email Address</a>
+            </div>
+            
+            <p>Or copy and paste this link into your browser:</p>
+            <div class="url-fallback">{{ verification_url }}</div>
+            
+            <div class="warning-box">
+                <strong>⏰ Important:</strong> This verification link will expire in {{ expiry_hours }} hours for your security.
+            </div>
+            
+            <p><strong>What's Next?</strong></p>
+            <ul>
+                <li><span class="truck-icon">🏢</span> Complete your company profile verification</li>
+                <li><span class="truck-icon">🚚</span> Add your equipment or browse available fleet</li>
+                <li><span class="truck-icon">📍</span> Start managing locations and bookings</li>
+                <li><span class="truck-icon">🤝</span> Connect with supply chain partners</li>
+            </ul>
+            
+            <p style="margin-top: 30px; font-size: 14px; color: #64748b;">If you didn't create an account with Fleet Marketplace, please ignore this email.</p>
+        </div>
+        
+        <div class="footer">
+            <p><strong>Fleet Marketplace Platform</strong></p>
+            <p>Connecting Your Fleet with the Supply Chain</p>
+            <p style="margin-top: 15px;">&copy; 2025 Fleet Marketplace. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

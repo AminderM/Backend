@@ -117,47 +117,37 @@ jobs:
             echo "📦 Checking dependencies..."
             pip install -q -r requirements.txt
             
-            # Restart the server
-            echo "🔄 Restarting server..."
-            
-            # Determine Python interpreter
+            # Restart the server via PM2
+            echo "🔄 Restarting server via PM2..."
+
             PYTHON_CMD="python3"
             if [ -d "venv" ]; then
               PYTHON_CMD="$(pwd)/venv/bin/python"
               echo "Using venv Python: $PYTHON_CMD"
             fi
-            
-            # Kill any existing server processes
-            echo "🛑 Stopping existing server processes..."
-            pkill -f "python.*server.py" || true
-            pkill -f "uvicorn.*server.*8001" || true
-            # Also try to stop PM2 server if it exists
-            if command -v pm2 &> /dev/null; then
-              pm2 delete server 2>/dev/null || true
-            fi
-            
-            # Wait a moment for processes to stop
-            sleep 2
-            
-            # Start server using nohup (as you do manually)
-            echo "🚀 Starting server with nohup..."
-            nohup $PYTHON_CMD server.py > nohup.out 2>&1 &
-            
-            # Get the process ID
-            SERVER_PID=$!
-            echo "✅ Server started with PID: $SERVER_PID"
-            
-            # Wait a moment for server to start
-            sleep 3
-            
-            # Check if server is still running
-            if ps -p $SERVER_PID > /dev/null 2>&1; then
-              echo "✅ Server process is running (PID: $SERVER_PID)"
+
+            # Restart PM2 process if it exists, otherwise start fresh
+            echo "🔄 Reloading PM2 backend-staging..."
+            if pm2 describe backend-staging > /dev/null 2>&1; then
+              pm2 restart backend-staging
             else
-              echo "⚠️ Server process may have crashed. Checking nohup.out..."
-              tail -20 nohup.out || true
+              echo "⚠️ PM2 process not found, starting fresh..."
+              fuser -k 8001/tcp || true
+              sleep 1
+              pm2 start $PYTHON_CMD --name "backend-staging" -- server.py
             fi
-            
+
+            pm2 save
+            sleep 3
+
+            if pm2 list | grep -q "backend-staging.*online"; then
+              echo "✅ Server is running via PM2"
+            else
+              echo "❌ Server failed to start. PM2 logs:"
+              pm2 logs backend-staging --lines 20 --nostream
+              exit 1
+            fi
+
             echo "✅ Deployment completed!"
             echo "🌐 Server should be available at http://${EC2_HOST}:8001/"
           EOF
@@ -192,8 +182,7 @@ jobs:
             fi
           done
           
-          # If still not responding, check PM2 status via SSH
           echo "⚠️ Server might still be starting. Checking PM2 status..."
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} "cd ~/apps/staging/Backend && pm2 status server || echo 'PM2 not available'" || echo "Could not check PM2 status"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} "pm2 status backend-staging" || echo "Could not check PM2 status"
           echo "⚠️ Please verify manually at http://${EC2_HOST}:8001/"
 

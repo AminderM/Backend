@@ -1,1 +1,1 @@
-../websocket_manager.py
+/app/websocket_manager.py

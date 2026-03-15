@@ -1,624 +1,567 @@
+#!/usr/bin/env python3
 """
-TMS Vehicles/Fleet API Tests - Phase 4
-Tests for Vehicle Management with Canadian Compliance (CVIP inspections)
-VIN tracking, maintenance records, driver assignments, fleet tracking
+Customer Analytics API Backend Test Suite
+Tests all 22 API endpoints for the customer analytics system.
 """
 
 import requests
 import json
 import sys
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 import uuid
+import time
+import traceback
 
-class TMSVehiclesTester:
-    def __init__(self, base_url="https://accessorial-charges.preview.emergentagent.com"):
-        self.base_url = base_url.rstrip('/')
+class CustomerAnalyticsAPITester:
+    def __init__(self, base_url="http://localhost:8001"):
+        self.base_url = base_url
         self.token = None
-        self.headers = {'Content-Type': 'application/json'}
         self.tests_run = 0
         self.tests_passed = 0
+        self.session_id = None
+        self.visitor_id = None
         self.failed_tests = []
-        self.tenant_id = None
-        self.created_vehicles = []  # Track created vehicles for cleanup
-        self.created_driver_id = None
+        self.passed_tests = []
+        
+        print(f"🚀 Initializing Customer Analytics API Tester")
+        print(f"📡 Base URL: {base_url}")
+        print("=" * 60)
 
-    def run_test(self, name, method, endpoint, expected_status, data=None, params=None):
+    def run_test(self, name, method, endpoint, expected_status, data=None, params=None, description=""):
         """Run a single API test"""
-        url = f"{self.base_url}/api/fleet/{endpoint}"
-        headers = self.headers.copy()
+        url = f"{self.base_url}/api/customer-analytics{endpoint}"
+        headers = {'Content-Type': 'application/json'}
+        
         if self.token:
             headers['Authorization'] = f'Bearer {self.token}'
 
         self.tests_run += 1
-        print(f"\n🔍 Testing {name}...")
-        print(f"   URL: {method} {url}")
-        if data:
-            print(f"   Data: {json.dumps(data, indent=2)}")
+        print(f"\n🔍 Test {self.tests_run}: {name}")
+        if description:
+            print(f"   📝 {description}")
+        print(f"   🎯 {method} {url}")
         
         try:
-            if method == 'GET':
-                response = requests.get(url, headers=headers, params=params, timeout=30)
-            elif method == 'POST':
-                response = requests.post(url, json=data, headers=headers, params=params, timeout=30)
-            elif method == 'PUT':
-                response = requests.put(url, json=data, headers=headers, params=params, timeout=30)
-            elif method == 'DELETE':
-                response = requests.delete(url, headers=headers, params=params, timeout=30)
-
-            print(f"   Response Status: {response.status_code}")
-            success = response.status_code == expected_status
+            start_time = time.time()
             
-            if success:
+            if method == 'GET':
+                response = requests.get(url, headers=headers, params=params, timeout=10)
+            elif method == 'POST':
+                response = requests.post(url, json=data, headers=headers, timeout=10)
+            elif method == 'PUT':
+                response = requests.put(url, json=data, headers=headers, timeout=10)
+            elif method == 'DELETE':
+                response = requests.delete(url, headers=headers, timeout=10)
+            
+            duration = round(time.time() - start_time, 2)
+            
+            # Check status code
+            if response.status_code == expected_status:
                 self.tests_passed += 1
-                print(f"✅ Passed - Status: {response.status_code}")
+                print(f"   ✅ PASSED - Status: {response.status_code} ({duration}s)")
+                self.passed_tests.append(name)
+                
+                # Try to parse response
                 try:
-                    return success, response.json() if response.text else {}
+                    response_data = response.json()
+                    if isinstance(response_data, dict):
+                        if 'session_id' in response_data:
+                            self.session_id = response_data['session_id']
+                        if 'visitor_id' in response_data:
+                            self.visitor_id = response_data['visitor_id']
+                        print(f"   📊 Response: {json.dumps(response_data, indent=2)[:200]}...")
+                    return True, response_data
                 except:
-                    return success, {}
+                    print(f"   📊 Response: {response.text[:200]}...")
+                    return True, {}
             else:
-                self.failed_tests.append(f"{name} - Expected {expected_status}, got {response.status_code}")
-                print(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
+                print(f"   ❌ FAILED - Expected {expected_status}, got {response.status_code}")
                 try:
                     error_data = response.json()
-                    print(f"   Error: {json.dumps(error_data, indent=2)}")
+                    print(f"   📊 Error: {json.dumps(error_data, indent=2)}")
                 except:
-                    print(f"   Error: {response.text}")
+                    print(f"   📊 Error: {response.text}")
+                self.failed_tests.append({
+                    "test": name,
+                    "expected": expected_status,
+                    "actual": response.status_code,
+                    "error": response.text
+                })
                 return False, {}
-
+                
         except Exception as e:
-            self.failed_tests.append(f"{name} - Error: {str(e)}")
-            print(f"❌ Failed - Error: {str(e)}")
+            print(f"   ❌ FAILED - Exception: {str(e)}")
+            print(f"   📍 Traceback: {traceback.format_exc()}")
+            self.failed_tests.append({
+                "test": name,
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            })
             return False, {}
 
-    def login(self, email, password):
-        """Test login and get token"""
-        print(f"\n🔑 Logging in as {email}...")
-        url = f"{self.base_url}/api/auth/login"
+    def test_admin_login(self):
+        """Test admin login to get auth token"""
+        print("\n🔑 Testing Admin Authentication")
+        print("=" * 40)
+        
+        # Login endpoint
+        login_url = f"{self.base_url}/api/auth/login"
+        login_data = {
+            "email": "aminderpro@gmail.com",
+            "password": "Admin@123!"
+        }
         
         try:
-            response = requests.post(url, json={"email": email, "password": password}, timeout=30)
-            print(f"   Login Status: {response.status_code}")
+            print(f"🔍 Logging in as admin...")
+            response = requests.post(login_url, json=login_data, timeout=10)
             
             if response.status_code == 200:
-                data = response.json()
-                self.token = data.get('access_token')
-                # Try to get tenant_id from user data
-                if 'user' in data:
-                    user_data = data['user']
-                    self.tenant_id = user_data.get('tenant_id') or user_data.get('company_id') or 'test-tenant-001'
+                response_data = response.json()
+                if 'access_token' in response_data:
+                    self.token = response_data['access_token']
+                    print(f"✅ Login successful - Token acquired")
+                    return True
                 else:
-                    self.tenant_id = 'test-tenant-001'  # Fallback
-                    
-                print(f"✅ Login successful")
-                print(f"   Tenant ID: {self.tenant_id}")
-                return True
+                    print(f"❌ Login failed - No token in response: {response.text}")
+                    return False
             else:
-                print(f"❌ Login failed - Status: {response.status_code}")
-                try:
-                    error_data = response.json()
-                    print(f"   Error: {json.dumps(error_data, indent=2)}")
-                except:
-                    print(f"   Error: {response.text}")
+                print(f"❌ Login failed - Status {response.status_code}: {response.text}")
                 return False
+                
         except Exception as e:
-            print(f"❌ Login failed - Error: {str(e)}")
+            print(f"❌ Login failed - Exception: {str(e)}")
             return False
 
-    def create_test_driver(self):
-        """Create a test driver for vehicle assignment tests"""
-        print(f"\n👤 Creating test driver for vehicle assignments...")
-        url = f"{self.base_url}/api/users"
+    def test_public_tracking_endpoints(self):
+        """Test all public tracking endpoints (no auth required)"""
+        print("\n📊 Testing Public Tracking Endpoints")
+        print("=" * 45)
         
-        driver_data = {
-            "email": f"test_driver_{datetime.now().strftime('%H%M%S')}@example.com",
-            "password": "TestDriver123!",
-            "full_name": "Test Driver",
-            "phone": "555-0123",
-            "role": "driver",
-            "tenant_id": self.tenant_id,
-            "license_number": "D123456789",
-            "license_province": "ON",
-            "license_expiry": "2025-12-31"
-        }
+        # Generate test IDs
+        test_visitor_id = str(uuid.uuid4())
         
-        try:
-            response = requests.post(url, json=driver_data, headers={'Authorization': f'Bearer {self.token}', 'Content-Type': 'application/json'}, timeout=30)
-            if response.status_code in [200, 201]:
-                result = response.json()
-                self.created_driver_id = result.get('user_id') or result.get('id')
-                print(f"✅ Test driver created: {self.created_driver_id}")
-                return True
-            else:
-                print(f"⚠️  Failed to create test driver: {response.status_code} - Will use existing driver if available")
-                # Try to get existing drivers for testing
-                existing_drivers_url = f"{self.base_url}/api/users?role=driver&limit=1"
-                resp = requests.get(existing_drivers_url, headers={'Authorization': f'Bearer {self.token}'}, timeout=30)
-                if resp.status_code == 200:
-                    drivers = resp.json()
-                    if isinstance(drivers, list) and len(drivers) > 0:
-                        self.created_driver_id = drivers[0].get('id')
-                        print(f"✅ Using existing driver: {self.created_driver_id}")
-                        return True
-                return False
-        except Exception as e:
-            print(f"⚠️  Error creating test driver: {str(e)} - Will skip driver assignment tests")
-            return False
-
-    def test_create_power_unit(self):
-        """Test POST /api/fleet/vehicles - Create power unit (tractor)"""
-        tractor_data = {
-            "tenant_id": self.tenant_id,
-            "unit_number": f"T-{datetime.now().strftime('%H%M%S')}",
-            "vehicle_type": "tractor_sleeper",
-            "vin": f"1XKWDB0X57J{datetime.now().strftime('%H%M%S')}",
-            "license_plate": f"TEST-{datetime.now().strftime('%H%M')}",
-            "license_plate_province": "ON",
-            "year": 2022,
-            "make": "Freightliner",
-            "model": "Cascadia",
-            "fuel_type": "diesel",
-            "gross_vehicle_weight_kg": 36000,
-            "sleeper": True,
-            "ownership_type": "company_owned",
-            "current_odometer_km": 150000,
-            "status": "available"
+        # 1. Start session
+        session_data = {
+            "visitor_id": test_visitor_id,
+            "landing_page": "https://example.com/",
+            "referrer": "https://google.com",
+            "user_agent": "Mozilla/5.0 Test Browser",
+            "screen_resolution": "1920x1080",
+            "language": "en-US",
+            "timezone": "America/New_York",
+            "utm_source": "google",
+            "utm_medium": "cpc",
+            "utm_campaign": "test_campaign"
         }
         
         success, response = self.run_test(
-            "Create Power Unit (Tractor)",
+            "Start Session",
             "POST",
-            "vehicles",
+            "/track/session/start",
             200,
-            data=tractor_data
+            data=session_data,
+            description="Initialize new tracking session"
         )
         
-        if (success or response.get('id')) and response.get('id'):
-            vehicle_id = response['id']
-            self.created_vehicles.append(vehicle_id)
-            print(f"   ✓ Power unit created with ID: {vehicle_id}")
-            print(f"   ✓ Unit number: {response.get('unit_number')}")
-            print(f"   ✓ Vehicle type: {response.get('vehicle_type')}")
-            print(f"   ✓ Category: {response.get('category')}")
-            return vehicle_id
-        return None
+        if success and 'session_id' in response:
+            session_id = response['session_id']
+            visitor_id = response['visitor_id']
+            print(f"   🆔 Session ID: {session_id}")
+            print(f"   👤 Visitor ID: {visitor_id}")
+            self.session_id = session_id
+            self.visitor_id = visitor_id
+        
+        # 2. Track pageview
+        pageview_data = {
+            "page_url": "https://example.com/products",
+            "page_title": "Products - Test Site",
+            "referrer": "https://example.com/",
+            "session_id": self.session_id,
+            "visitor_id": self.visitor_id,
+            "user_agent": "Mozilla/5.0 Test Browser",
+            "screen_resolution": "1920x1080",
+            "viewport_size": "1200x800",
+            "language": "en-US",
+            "timezone": "America/New_York"
+        }
+        
+        self.run_test(
+            "Track Page View",
+            "POST",
+            "/track/pageview",
+            200,
+            data=pageview_data,
+            description="Track page view event"
+        )
+        
+        # 3. Track click event
+        click_data = {
+            "page_url": "https://example.com/products",
+            "element_id": "buy-button",
+            "element_class": "btn btn-primary",
+            "element_tag": "button",
+            "element_text": "Buy Now",
+            "x_position": 150,
+            "y_position": 300,
+            "viewport_width": 1200,
+            "viewport_height": 800,
+            "session_id": self.session_id,
+            "visitor_id": self.visitor_id
+        }
+        
+        self.run_test(
+            "Track Click Event",
+            "POST",
+            "/track/click",
+            200,
+            data=click_data,
+            description="Track click for heatmap data"
+        )
+        
+        # 4. Track scroll event
+        scroll_data = {
+            "page_url": "https://example.com/products",
+            "scroll_depth_percent": 75,
+            "max_scroll_depth": 80,
+            "time_on_page": 45,
+            "session_id": self.session_id,
+            "visitor_id": self.visitor_id
+        }
+        
+        self.run_test(
+            "Track Scroll Event",
+            "POST",
+            "/track/scroll",
+            200,
+            data=scroll_data,
+            description="Track scroll depth for engagement"
+        )
+        
+        # 5. Track form interaction
+        form_data = {
+            "page_url": "https://example.com/contact",
+            "form_id": "contact-form",
+            "form_name": "Contact Form",
+            "event_type": "submit",
+            "field_name": "email",
+            "time_spent": 30,
+            "session_id": self.session_id,
+            "visitor_id": self.visitor_id,
+            "form_data": {"email": "test@example.com", "name": "Test User"}
+        }
+        
+        self.run_test(
+            "Track Form Interaction",
+            "POST",
+            "/track/form",
+            200,
+            data=form_data,
+            description="Track form submit event"
+        )
+        
+        # 6. Track conversion
+        conversion_data = {
+            "event_name": "demo_request",
+            "event_category": "demo_request",
+            "event_value": 100.0,
+            "page_url": "https://example.com/demo",
+            "session_id": self.session_id,
+            "visitor_id": self.visitor_id,
+            "metadata": {"source": "website", "type": "form"}
+        }
+        
+        self.run_test(
+            "Track Conversion Event",
+            "POST",
+            "/track/conversion",
+            200,
+            data=conversion_data,
+            description="Track conversion event"
+        )
+        
+        # 7. Track custom event
+        custom_data = {
+            "event_name": "video_played",
+            "event_data": {"video_id": "intro-video", "duration": 120},
+            "page_url": "https://example.com/videos",
+            "session_id": self.session_id,
+            "visitor_id": self.visitor_id
+        }
+        
+        self.run_test(
+            "Track Custom Event",
+            "POST",
+            "/track/custom",
+            200,
+            data=custom_data,
+            description="Track custom event"
+        )
+        
+        # 8. End session
+        self.run_test(
+            "End Session",
+            "POST",
+            f"/track/session/end?session_id={self.session_id}&duration_seconds=300",
+            200,
+            description="End tracking session"
+        )
 
-    def test_create_trailer(self):
-        """Test POST /api/fleet/vehicles - Create trailer with auto-categorization"""
-        trailer_data = {
-            "tenant_id": self.tenant_id,
-            "unit_number": f"TR-{datetime.now().strftime('%H%M%S')}",
-            "vehicle_type": "dry_van_trailer",
-            "vin": f"1GRAA0621XK{datetime.now().strftime('%H%M%S')}",
-            "license_plate": f"TRL-{datetime.now().strftime('%H%M')}",
-            "license_plate_province": "ON",
-            "year": 2021,
-            "make": "Great Dane",
-            "model": "Everest",
-            "trailer_length_ft": 53,
-            "trailer_width_ft": 8.5,
-            "trailer_height_ft": 13.5,
-            "ownership_type": "company_owned",
-            "status": "available"
+    def test_dashboard_endpoints(self):
+        """Test all dashboard endpoints (auth required)"""
+        print("\n📈 Testing Dashboard Endpoints (Auth Required)")
+        print("=" * 50)
+        
+        if not self.token:
+            print("❌ Cannot test dashboard endpoints - no auth token")
+            return
+        
+        # Wait a moment for data to be processed
+        print("⏳ Waiting 2 seconds for data processing...")
+        time.sleep(2)
+        
+        # 9. Analytics overview
+        self.run_test(
+            "Analytics Overview",
+            "GET",
+            "/dashboard/overview?days=30",
+            200,
+            description="Get dashboard analytics overview"
+        )
+        
+        # 10. Real-time stats
+        self.run_test(
+            "Real-time Stats",
+            "GET",
+            "/dashboard/realtime",
+            200,
+            description="Get real-time visitor statistics"
+        )
+        
+        # 11. Traffic sources
+        self.run_test(
+            "Traffic Sources",
+            "GET",
+            "/dashboard/traffic-sources?days=30",
+            200,
+            description="Get traffic source breakdown"
+        )
+        
+        # 12. Top pages
+        self.run_test(
+            "Top Pages",
+            "GET",
+            "/dashboard/top-pages?days=30&limit=20",
+            200,
+            description="Get top pages by views"
+        )
+        
+        # 13. User journeys
+        self.run_test(
+            "User Journeys",
+            "GET",
+            "/dashboard/user-journeys?days=30&limit=20",
+            200,
+            description="Get user journey paths"
+        )
+        
+        # 14. Funnel analysis
+        self.run_test(
+            "Funnel Analysis",
+            "GET",
+            "/dashboard/funnel-analysis?days=30",
+            200,
+            description="Get conversion funnel analysis"
+        )
+        
+        # 15. Heatmap data
+        self.run_test(
+            "Heatmap Data",
+            "GET",
+            "/dashboard/heatmap-data?page_url=https://example.com/products&days=30",
+            200,
+            description="Get heatmap data for specific page"
+        )
+        
+        # 16. Form analytics
+        self.run_test(
+            "Form Analytics",
+            "GET",
+            "/dashboard/form-analytics?days=30",
+            200,
+            description="Get form interaction analytics"
+        )
+        
+        # 17. Conversion analytics
+        self.run_test(
+            "Conversion Analytics",
+            "GET",
+            "/dashboard/conversion-analytics?days=30",
+            200,
+            description="Get conversion analytics"
+        )
+        
+        # 18. Visitor activity log
+        self.run_test(
+            "Visitor Activity Log",
+            "GET",
+            "/dashboard/visitor-activity-log?days=7&limit=100",
+            200,
+            description="Get visitor activity log"
+        )
+
+    def test_configuration_endpoints(self):
+        """Test custom event configuration endpoints"""
+        print("\n⚙️ Testing Configuration Endpoints")
+        print("=" * 40)
+        
+        if not self.token:
+            print("❌ Cannot test config endpoints - no auth token")
+            return
+        
+        # 19. Get event configs
+        self.run_test(
+            "Get Event Configs",
+            "GET",
+            "/config/events",
+            200,
+            description="Get all custom event configurations"
+        )
+        
+        # 20. Create event config
+        config_data = {
+            "name": "button_click_test",
+            "description": "Test button click tracking",
+            "event_selector": ".test-button",
+            "event_type": "click",
+            "category": "engagement",
+            "is_conversion": False,
+            "is_active": True
         }
         
         success, response = self.run_test(
-            "Create Trailer with Auto-categorization",
+            "Create Event Config",
             "POST",
-            "vehicles",
+            "/config/events",
             200,
-            data=trailer_data
+            data=config_data,
+            description="Create custom event configuration"
         )
         
-        if (success or response.get('id')) and response.get('id'):
-            vehicle_id = response['id']
-            self.created_vehicles.append(vehicle_id)
-            print(f"   ✓ Trailer created with ID: {vehicle_id}")
-            print(f"   ✓ Unit number: {response.get('unit_number')}")
-            print(f"   ✓ Vehicle type: {response.get('vehicle_type')}")
-            print(f"   ✓ Auto-categorized as: {response.get('category')}")
-            return vehicle_id
-        return None
+        config_id = None
+        if success and 'config' in response and 'id' in response['config']:
+            config_id = response['config']['id']
+            print(f"   🆔 Created config ID: {config_id}")
 
-    def test_list_vehicles(self):
-        """Test GET /api/fleet/vehicles - List vehicles with filtering"""
-        success, response = self.run_test(
-            "List All Vehicles",
+    def test_reports_endpoints(self):
+        """Test reports and export endpoints"""
+        print("\n📋 Testing Reports & Export Endpoints")
+        print("=" * 43)
+        
+        if not self.token:
+            print("❌ Cannot test reports endpoints - no auth token")
+            return
+        
+        # 21. Summary report
+        start_date = (datetime.now() - timedelta(days=30)).isoformat()
+        end_date = datetime.now().isoformat()
+        
+        self.run_test(
+            "Summary Report",
             "GET",
-            "vehicles",
-            200
-        )
-        
-        if success and isinstance(response, list):
-            print(f"   ✓ Found {len(response)} vehicles")
-            for vehicle in response[:3]:  # Show first 3
-                print(f"   ✓ Vehicle: {vehicle.get('unit_number')} - {vehicle.get('vehicle_type')} - {vehicle.get('status')}")
-            return True
-        return False
-
-    def test_list_vehicles_with_filters(self):
-        """Test vehicle filtering by status, type, category"""
-        # Test status filter
-        success, response = self.run_test(
-            "Filter Vehicles by Status (available)",
-            "GET",
-            "vehicles?status=available",
-            200
-        )
-        
-        if success:
-            available_count = len(response) if isinstance(response, list) else 0
-            print(f"   ✓ Found {available_count} available vehicles")
-        
-        # Test category filter
-        success, response = self.run_test(
-            "Filter Vehicles by Category (power_unit)",
-            "GET",
-            "vehicles?category=power_unit",
-            200
-        )
-        
-        if success:
-            power_units = len(response) if isinstance(response, list) else 0
-            print(f"   ✓ Found {power_units} power units")
-        
-        # Test CVIP expiring soon
-        success, response = self.run_test(
-            "Filter Vehicles - CVIP Expiring Soon",
-            "GET",
-            "vehicles?cvip_expiring_soon=true",
-            200
-        )
-        
-        if success:
-            cvip_expiring = len(response) if isinstance(response, list) else 0
-            print(f"   ✓ Found {cvip_expiring} vehicles with CVIP expiring soon")
-        
-        return True
-
-    def test_vehicles_summary(self):
-        """Test GET /api/fleet/vehicles/summary - Fleet summary"""
-        success, response = self.run_test(
-            "Get Fleet Summary",
-            "GET",
-            "vehicles/summary",
-            200
-        )
-        
-        if success and response:
-            print(f"   ✓ Total vehicles: {response.get('total_vehicles', 0)}")
-            print(f"   ✓ By status: {response.get('by_status', {})}")
-            print(f"   ✓ By category: {response.get('by_category', {})}")
-            print(f"   ✓ CVIP expiring (30 days): {response.get('cvip_expiring_30_days', 0)}")
-            print(f"   ✓ CVIP expired: {response.get('cvip_expired', 0)}")
-            print(f"   ✓ Compliance alerts: {response.get('compliance_alerts', 0)}")
-            return True
-        return False
-
-    def test_get_vehicle_details(self, vehicle_id):
-        """Test GET /api/fleet/vehicles/{id} - Get vehicle with details"""
-        if not vehicle_id:
-            print("   ⚠️  No vehicle ID provided, skipping test")
-            return False
-            
-        success, response = self.run_test(
-            f"Get Vehicle Details ({vehicle_id[:8]}...)",
-            "GET",
-            f"vehicles/{vehicle_id}",
-            200
-        )
-        
-        if success and response:
-            print(f"   ✓ Unit number: {response.get('unit_number')}")
-            print(f"   ✓ Year/Make/Model: {response.get('year_make_model')}")
-            print(f"   ✓ Status: {response.get('status')}")
-            print(f"   ✓ CVIP status: {response.get('cvip_status', 'unknown')}")
-            print(f"   ✓ Recent inspections: {len(response.get('recent_inspections', []))}")
-            print(f"   ✓ Recent maintenance: {len(response.get('recent_maintenance', []))}")
-            return True
-        return False
-
-    def test_update_vehicle(self, vehicle_id):
-        """Test PUT /api/fleet/vehicles/{id} - Update vehicle"""
-        if not vehicle_id:
-            print("   ⚠️  No vehicle ID provided, skipping test")
-            return False
-            
-        update_data = {
-            "current_odometer_km": 155000,
-            "status": "in_use",
-            "notes": "Updated for testing"
-        }
-        
-        success, response = self.run_test(
-            f"Update Vehicle ({vehicle_id[:8]}...)",
-            "PUT",
-            f"vehicles/{vehicle_id}",
+            f"/reports/summary?start_date={start_date}&end_date={end_date}",
             200,
-            data=update_data
+            description="Get comprehensive summary report"
         )
         
-        if success:
-            print(f"   ✓ Vehicle updated successfully")
-            return True
-        return False
-
-    def test_assign_driver(self, vehicle_id):
-        """Test POST /api/fleet/vehicles/{id}/assign-driver"""
-        if not vehicle_id or not self.created_driver_id:
-            print("   ⚠️  No vehicle ID or driver ID available, skipping test")
-            return False
-            
-        success, response = self.run_test(
-            f"Assign Driver to Vehicle ({vehicle_id[:8]}...)",
-            "POST",
-            f"vehicles/{vehicle_id}/assign-driver?driver_id={self.created_driver_id}&is_primary=true",
-            200
-        )
-        
-        if success:
-            print(f"   ✓ Driver assigned successfully")
-            print(f"   ✓ Driver name: {response.get('driver_name')}")
-            return True
-        return False
-
-    def test_add_cvip_inspection(self, vehicle_id):
-        """Test POST /api/fleet/vehicles/{id}/inspections - Add CVIP"""
-        if not vehicle_id:
-            print("   ⚠️  No vehicle ID provided, skipping test")
-            return False
-            
-        # Convert to query parameters
-        params = {
-            "inspection_type": "cvip",
-            "inspection_date": date.today().isoformat(),
-            "expiry_date": (date.today() + timedelta(days=365)).isoformat(),
-            "result": "passed",
-            "location": "Toronto Inspection Station",
-            "inspector_name": "John Inspector",
-            "sticker_number": f"CVIP-{datetime.now().strftime('%Y%m%d%H%M')}",
-            "cost": 150.00,
-            "notes": "Annual CVIP inspection completed"
-        }
-        
-        success, response = self.run_test(
-            f"Add CVIP Inspection ({vehicle_id[:8]}...)",
-            "POST",
-            f"vehicles/{vehicle_id}/inspections",
-            200,
-            params=params
-        )
-        
-        if success:
-            print(f"   ✓ CVIP inspection added successfully")
-            print(f"   ✓ Inspection ID: {response.get('id')}")
-            print(f"   ✓ Result: {response.get('result')}")
-            return response.get('id')
-        return None
-
-    def test_get_vehicle_inspections(self, vehicle_id):
-        """Test GET /api/fleet/vehicles/{id}/inspections"""
-        if not vehicle_id:
-            print("   ⚠️  No vehicle ID provided, skipping test")
-            return False
-            
-        success, response = self.run_test(
-            f"Get Vehicle Inspections ({vehicle_id[:8]}...)",
+        # 22. Export data
+        self.run_test(
+            "Export Sessions Data",
             "GET",
-            f"vehicles/{vehicle_id}/inspections",
-            200
-        )
-        
-        if success and isinstance(response, list):
-            print(f"   ✓ Found {len(response)} inspections")
-            for inspection in response[:2]:  # Show first 2
-                print(f"   ✓ Inspection: {inspection.get('inspection_type')} - {inspection.get('result')} - {inspection.get('inspection_date')}")
-            return True
-        return False
-
-    def test_add_maintenance_record(self, vehicle_id):
-        """Test POST /api/fleet/vehicles/{id}/maintenance"""
-        if not vehicle_id:
-            print("   ⚠️  No vehicle ID provided, skipping test")
-            return False
-            
-        # Convert to query parameters
-        params = {
-            "maintenance_type": "preventive",
-            "description": "Scheduled 90-day PM service",
-            "scheduled_date": date.today().isoformat(),
-            "completed_at": datetime.now().isoformat(),
-            "odometer_at_service": 155000,
-            "shop_name": "Toronto Fleet Services",
-            "labor_cost": 250.00,
-            "parts_cost": 150.00,
-            "notes": "Oil change, filter replacement, brake inspection"
-        }
-        
-        success, response = self.run_test(
-            f"Add Maintenance Record ({vehicle_id[:8]}...)",
-            "POST",
-            f"vehicles/{vehicle_id}/maintenance",
+            f"/reports/export?data_type=sessions&start_date={start_date}&end_date={end_date}&format=json",
             200,
-            params=params
+            description="Export sessions analytics data"
         )
-        
-        if success:
-            print(f"   ✓ Maintenance record added successfully")
-            print(f"   ✓ Maintenance ID: {response.get('id')}")
-            print(f"   ✓ Total cost: ${response.get('total_cost', 0)}")
-            return response.get('id')
-        return None
 
-    def test_get_vehicle_maintenance(self, vehicle_id):
-        """Test GET /api/fleet/vehicles/{id}/maintenance"""
-        if not vehicle_id:
-            print("   ⚠️  No vehicle ID provided, skipping test")
-            return False
-            
-        success, response = self.run_test(
-            f"Get Vehicle Maintenance ({vehicle_id[:8]}...)",
-            "GET",
-            f"vehicles/{vehicle_id}/maintenance",
-            200
-        )
+    def run_all_tests(self):
+        """Run all tests in sequence"""
+        print("\n" + "="*60)
+        print("🧪 CUSTOMER ANALYTICS API TEST SUITE")
+        print("="*60)
         
-        if success and isinstance(response, list):
-            print(f"   ✓ Found {len(response)} maintenance records")
-            for maintenance in response[:2]:  # Show first 2
-                print(f"   ✓ Maintenance: {maintenance.get('maintenance_type')} - ${maintenance.get('total_cost', 0)} - {maintenance.get('description')}")
-            return True
-        return False
+        start_time = time.time()
+        
+        # Step 1: Authentication
+        if not self.test_admin_login():
+            print("\n❌ Authentication failed - stopping tests")
+            return self.generate_summary()
+        
+        # Step 2: Public tracking endpoints (no auth)
+        self.test_public_tracking_endpoints()
+        
+        # Step 3: Dashboard endpoints (auth required)
+        self.test_dashboard_endpoints()
+        
+        # Step 4: Configuration endpoints
+        self.test_configuration_endpoints()
+        
+        # Step 5: Reports endpoints
+        self.test_reports_endpoints()
+        
+        # Generate final summary
+        total_time = round(time.time() - start_time, 2)
+        return self.generate_summary(total_time)
 
-    def test_update_vehicle_location(self, vehicle_id):
-        """Test POST /api/fleet/vehicles/{id}/location"""
-        if not vehicle_id:
-            print("   ⚠️  No vehicle ID provided, skipping test")
-            return False
-            
-        # Convert to query parameters
-        params = {
-            "latitude": 43.6532,
-            "longitude": -79.3832,
-            "speed_kmh": 65.0,
-            "heading": 180.0,
-            "odometer_km": 155100,
-            "source": "gps"
-        }
+    def generate_summary(self, total_time=0):
+        """Generate test summary"""
+        print("\n" + "="*60)
+        print("📊 TEST RESULTS SUMMARY")
+        print("="*60)
         
-        success, response = self.run_test(
-            f"Update Vehicle Location ({vehicle_id[:8]}...)",
-            "POST",
-            f"vehicles/{vehicle_id}/location",
-            200,
-            params=params
-        )
+        success_rate = (self.tests_passed / self.tests_run * 100) if self.tests_run > 0 else 0
         
-        if success:
-            print(f"   ✓ Vehicle location updated (Toronto, ON)")
-            return True
-        return False
-
-    def test_fleet_tracking(self):
-        """Test GET /api/fleet/vehicles/fleet-tracking - Real-time fleet map"""
-        success, response = self.run_test(
-            "Get Fleet Tracking Data",
-            "GET",
-            "vehicles/fleet-tracking",
-            200
-        )
+        print(f"📈 Tests Run: {self.tests_run}")
+        print(f"✅ Tests Passed: {self.tests_passed}")
+        print(f"❌ Tests Failed: {len(self.failed_tests)}")
+        print(f"📊 Success Rate: {success_rate:.1f}%")
+        if total_time > 0:
+            print(f"⏱️ Total Time: {total_time}s")
         
-        if success and isinstance(response, list):
-            print(f"   ✓ Found {len(response)} vehicles in fleet tracking")
-            for vehicle in response[:3]:  # Show first 3
-                print(f"   ✓ Vehicle: {vehicle.get('unit_number')} - {vehicle.get('status')} - Lat: {vehicle.get('latitude')} - Driver: {vehicle.get('driver_name') or 'Unassigned'}")
-            return True
-        return False
-
-    def test_unassign_driver(self, vehicle_id):
-        """Test POST /api/fleet/vehicles/{id}/unassign-driver"""
-        if not vehicle_id:
-            print("   ⚠️  No vehicle ID provided, skipping test")
-            return False
-            
-        success, response = self.run_test(
-            f"Unassign Driver from Vehicle ({vehicle_id[:8]}...)",
-            "POST",
-            f"vehicles/{vehicle_id}/unassign-driver?is_primary=true&reason=End of shift",
-            200
-        )
-        
-        if success:
-            print(f"   ✓ Driver unassigned successfully")
-            return True
-        return False
-
-    def print_final_results(self):
-        """Print final test results"""
-        print(f"\n{'='*50}")
-        print(f"📊 FINAL TEST RESULTS")
-        print(f"{'='*50}")
-        print(f"Tests Run: {self.tests_run}")
-        print(f"Tests Passed: {self.tests_passed}")
-        print(f"Tests Failed: {len(self.failed_tests)}")
-        print(f"Success Rate: {(self.tests_passed/self.tests_run*100):.1f}%" if self.tests_run > 0 else "0%")
+        if self.passed_tests:
+            print(f"\n✅ PASSED TESTS ({len(self.passed_tests)}):")
+            for i, test in enumerate(self.passed_tests, 1):
+                print(f"  {i}. {test}")
         
         if self.failed_tests:
-            print(f"\n❌ FAILED TESTS:")
-            for test in self.failed_tests:
-                print(f"   - {test}")
+            print(f"\n❌ FAILED TESTS ({len(self.failed_tests)}):")
+            for i, failure in enumerate(self.failed_tests, 1):
+                print(f"  {i}. {failure['test']}")
+                if 'expected' in failure:
+                    print(f"     Expected: {failure['expected']}, Got: {failure['actual']}")
+                if 'error' in failure:
+                    print(f"     Error: {failure['error'][:200]}...")
         
-        return len(self.failed_tests) == 0
+        print("\n" + "="*60)
+        
+        # Return status for exit code
+        return 0 if success_rate >= 70 else 1
 
 def main():
-    """Main test execution"""
-    print("🚛 TMS Vehicles/Fleet API Tests - Phase 4")
-    print("Testing Vehicle Management with Canadian Compliance")
-    print("=" * 60)
-    
-    tester = TMSVehiclesTester()
-    
-    # Login
-    if not tester.login("aminderpro@gmail.com", "Admin@123!"):
-        print("❌ Login failed, aborting tests")
+    """Main test runner"""
+    try:
+        # Use provided backend URL
+        tester = CustomerAnalyticsAPITester("http://localhost:8001")
+        exit_code = tester.run_all_tests()
+        
+        print(f"\n🏁 Test suite completed with exit code: {exit_code}")
+        return exit_code
+        
+    except KeyboardInterrupt:
+        print("\n⛔ Test suite interrupted by user")
         return 1
-    
-    # Create test driver for assignment tests
-    tester.create_test_driver()
-    
-    # Test Vehicle CRUD
-    print(f"\n🚛 VEHICLE CRUD OPERATIONS")
-    print("-" * 40)
-    tractor_id = tester.test_create_power_unit()
-    trailer_id = tester.test_create_trailer()
-    tester.test_list_vehicles()
-    tester.test_list_vehicles_with_filters()
-    tester.test_vehicles_summary()
-    
-    # Test vehicle details and updates
-    if tractor_id:
-        tester.test_get_vehicle_details(tractor_id)
-        tester.test_update_vehicle(tractor_id)
-    
-    # Test driver assignments
-    print(f"\n👤 DRIVER ASSIGNMENTS")
-    print("-" * 40)
-    if tractor_id:
-        tester.test_assign_driver(tractor_id)
-    
-    # Test inspections
-    print(f"\n🔍 CVIP INSPECTIONS")
-    print("-" * 40)
-    if tractor_id:
-        tester.test_add_cvip_inspection(tractor_id)
-        tester.test_get_vehicle_inspections(tractor_id)
-    
-    # Test maintenance
-    print(f"\n🔧 MAINTENANCE RECORDS")
-    print("-" * 40)
-    if tractor_id:
-        tester.test_add_maintenance_record(tractor_id)
-        tester.test_get_vehicle_maintenance(tractor_id)
-    
-    # Test location tracking
-    print(f"\n📍 LOCATION TRACKING")
-    print("-" * 40)
-    if tractor_id:
-        tester.test_update_vehicle_location(tractor_id)
-    tester.test_fleet_tracking()
-    
-    # Test unassign driver
-    if tractor_id:
-        tester.test_unassign_driver(tractor_id)
-    
-    # Print results
-    success = tester.print_final_results()
-    
-    print(f"\n🎯 Created vehicles for testing: {len(tester.created_vehicles)}")
-    if tester.created_vehicles:
-        for vid in tester.created_vehicles:
-            print(f"   - Vehicle ID: {vid}")
-    
-    return 0 if success else 1
+    except Exception as e:
+        print(f"\n💥 Test suite failed with exception: {str(e)}")
+        print(f"📍 Traceback: {traceback.format_exc()}")
+        return 1
 
 if __name__ == "__main__":
     sys.exit(main())

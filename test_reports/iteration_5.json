@@ -1,70 +1,51 @@
 {
-  "summary": "Completed comprehensive testing of TMS Rate Cards & Accessorial Charges Phase 6. All 14 API endpoints tested with 100% success rate (25/25 tests passed). Canadian-first design properly implemented with support for detention, lumper, fuel surcharge, border crossing (PARS/PAPS), and other accessorial charges.",
+  "summary": "Completed comprehensive backend testing of Scheduled Email Reports feature. All 7 core endpoints functioning correctly with proper validation, authentication, and APScheduler integration. 91.7% success rate (22/24 tests passed).",
   "backend_issues": {
-    "critical": [],
-    "minor": []
+    "minor_issues": [
+      {
+        "endpoint": "Authentication endpoints",
+        "issue": "Returns 403 instead of 401 for unauthenticated requests",
+        "impact": "Cosmetic - both status codes are valid for unauthorized access",
+        "fix_priority": "LOW"
+      }
+    ]
   },
-  "frontend_issues": {
-    "ui_bugs": [],
-    "integration_issues": [],
-    "design_issues": []
-  },
+  "frontend_issues": {},
   "passed_tests": [
-    "GET /api/pricing/accessorials/codes - Returns all 25 standard accessorial codes including Canadian-specific (border_crossing, pars_paps)",
-    "GET /api/pricing/accessorials/defaults - Returns 19 default accessorial charges with Canadian standard rates",
-    "POST /api/pricing/accessorials - Create/update tenant-specific accessorial definition override",
-    "GET /api/pricing/accessorials - List accessorial definitions merged with defaults",
-    "PUT /api/pricing/accessorials/{code} - Update accessorial definition (rate, minimum, free time)",
-    "POST /api/pricing/rate-cards - Create rate card with lane rates and accessorial overrides",
-    "GET /api/pricing/rate-cards - List rate cards with filtering (status, customer, carrier)",
-    "GET /api/pricing/rate-cards/{id} - Get full rate card details with lane rates",
-    "PUT /api/pricing/rate-cards/{id} - Update rate card (name, FSC %, minimum)",
-    "GET /api/pricing/rate-cards/{id} - Returns 404 for non-existent rate card",
-    "POST /api/pricing/rate-cards/{id}/lanes - Add lane rate with city/province level matching",
-    "POST /api/pricing/rate-cards/{id}/lanes - Add province-only lane rates",
-    "POST /api/pricing/rate-cards/{id}/lanes - Validates at least one equipment rate required",
-    "DELETE /api/pricing/rate-cards/{id}/lanes/{lane_id} - Remove lane rate",
-    "POST /api/pricing/rate-cards/{id}/activate - Activate rate card (draft → active)",
-    "POST /api/pricing/rate-cards/quote - Get quote for matching lane with correct line haul",
-    "POST /api/pricing/rate-cards/quote - Get quote with accessorial charges",
-    "POST /api/pricing/rate-cards/quote - Get quote for different equipment types (reefer vs dry_van)",
-    "POST /api/pricing/rate-cards/quote - Fallback to default per-km rate when no lane match",
-    "POST /api/pricing/rate-cards/quote - Returns 404 when no active rate card exists",
-    "GET /api/pricing/rate-cards/lanes/search - Search all lanes across rate cards",
-    "GET /api/pricing/rate-cards/lanes/search - Filter by origin province",
-    "GET /api/pricing/rate-cards/lanes/search - Filter by destination province",
-    "GET /api/pricing/rate-cards/lanes/search - Filter by corridor (origin + destination)"
+    "Admin authentication with provided credentials",
+    "POST /api/dashboard/reports/schedule - Create daily/weekly/monthly schedules",
+    "GET /api/dashboard/reports/schedules - List all scheduled reports",
+    "GET /api/dashboard/reports/schedule/{id} - Get specific schedule details", 
+    "PUT /api/dashboard/reports/schedule/{id} - Update schedule configuration",
+    "DELETE /api/dashboard/reports/schedule/{id} - Delete schedules",
+    "POST /api/dashboard/reports/schedule/{id}/toggle - Toggle schedules on/off",
+    "POST /api/dashboard/reports/schedule/{id}/send-now - Manual report triggering",
+    "Input validation for frequency (daily/weekly/monthly)",
+    "Input validation for report_type (full/summary/kpi_only)",
+    "Input validation for time format (HH:MM)",
+    "Email format validation",
+    "Proper error handling for non-existent schedules (404)",
+    "Authentication requirement enforcement for protected endpoints",
+    "APScheduler integration for schedule management",
+    "Schedule state management (active/inactive)",
+    "Proper JSON responses with meaningful messages",
+    "Database operations (create, read, update, delete)",
+    "UUID-based schedule identification",
+    "Timezone support for scheduling",
+    "CSV attachment configuration",
+    "Report days range configuration (1-90 days)"
   ],
   "test_report_links": [
-    "/app/backend/tests/test_rates_accessorials.py",
-    "/app/test_reports/pytest/pytest_results.xml"
+    "/app/backend_test_scheduled_reports.py"
   ],
-  "action_items": [],
-  "critical_code_review_comments": [
-    "All endpoints properly implement tenant isolation for multi-tenant support",
-    "Rate quote calculation correctly handles fuel surcharge as percentage of line haul",
-    "Lane matching algorithm prioritizes city-level matches over province-level",
-    "Accessorial overrides properly cascade (rate card override → tenant definition → system default)",
-    "MongoDB _id properly excluded from all responses"
-  ],
+  "action_item_for_main_agent": "",
   "updated_files": [
-    "/app/backend/tests/test_rates_accessorials.py"
+    "/app/backend_test_scheduled_reports.py"
   ],
-  "success_rate": {
-    "backend": "100% (25/25 tests passed)",
-    "frontend": "N/A - Backend only testing requested"
+  "success_percentage": {
+    "backend": "91.7% (22/24 tests passed)",
+    "frontend": "N/A (backend only testing as specified)"
   },
-  "seed_data_creation": "Created test rate cards with TEST_ prefix for various scenarios (lane rates, activation, quote testing)",
-  "retest_needed": false,
-  "should_main_agent_self_test": false,
-  "context_for_next_testing_agent": "Phase 6 Rate Cards & Accessorials API fully functional. All 14 endpoints working correctly. Test tenant 'test-tenant' has multiple rate cards created during testing. Admin credentials: aminderpro@gmail.com / Admin@123!. Token field in login response is 'access_token'.",
-  "verified_features": {
-    "accessorial_codes": "25 standard codes including Canadian-specific (border_crossing, pars_paps, bonded_carrier)",
-    "default_rates": "19 default accessorial charges with Canadian standard rates (detention @$75/hr, border crossing @$200 flat)",
-    "rate_card_crud": "Create, read, update, list with filtering by status/customer/carrier",
-    "lane_rates": "Add/remove lane rates with city and province level matching",
-    "rate_card_activation": "Draft to active workflow with supersede of existing active cards",
-    "rate_quote": "Calculate quotes with lane matching, fuel surcharge, and accessorial charges",
-    "lane_search": "Search lanes across rate cards by origin/destination province"
-  }
+  "should_call_test_agent_after_fix": "false",
+  "should_main_agent_test_itself": "true"
 }

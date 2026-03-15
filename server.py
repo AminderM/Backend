@@ -38,17 +38,18 @@ from routes import bundle_routes
 from routes import accounting_routes
 from routes import analytics_routes
 from routes import marketing_routes
-from routes import master_data_routes
-from routes import orders_routes
-from routes import vehicles_routes
-from routes import invoices_routes
-from routes import rates_routes
+from routes import customer_analytics_routes
+from routes import dashboard_routes
+from routes import scheduled_reports
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # WebSocket Manager
 manager = ConnectionManager()
+
+# Set websocket manager for customer analytics real-time updates
+customer_analytics_routes.set_websocket_manager(manager)
 
 # Create the main app
 app = FastAPI(title="Fleet Marketplace API")
@@ -80,11 +81,9 @@ api_router.include_router(bundle_routes.router)
 api_router.include_router(accounting_routes.router)
 api_router.include_router(analytics_routes.router)
 api_router.include_router(marketing_routes.router)
-api_router.include_router(master_data_routes.router, prefix="/master-data", tags=["Master Data"])
-api_router.include_router(orders_routes.router, prefix="/operations", tags=["Orders & Shipments"])
-api_router.include_router(vehicles_routes.router, prefix="/fleet", tags=["Vehicles & Fleet"])
-api_router.include_router(invoices_routes.router, prefix="/billing", tags=["Invoices & Billing"])
-api_router.include_router(rates_routes.router, prefix="/pricing", tags=["Rate Cards & Accessorials"])
+api_router.include_router(customer_analytics_routes.router)
+api_router.include_router(dashboard_routes.router)
+api_router.include_router(scheduled_reports.router)
 
 # WebSocket endpoint for real-time vehicle tracking
 @api_router.websocket("/ws/vehicle/{vehicle_id}")
@@ -100,6 +99,23 @@ async def vehicle_websocket_endpoint(websocket: WebSocket, vehicle_id: str):
         pass
     finally:
         manager.disconnect_vehicle(websocket, vehicle_id)
+
+# WebSocket endpoint for real-time analytics dashboard
+@api_router.websocket("/ws/analytics")
+async def analytics_websocket_endpoint(websocket: WebSocket, token: str = None):
+    """WebSocket endpoint for real-time analytics dashboard updates"""
+    await manager.connect_analytics(websocket)
+    try:
+        while True:
+            # Keep connection alive, handle any incoming messages
+            data = await websocket.receive_text()
+            # Echo back for ping/pong
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect_analytics(websocket)
 
 # CORS Middleware - must be added before routes
 app.add_middleware(
@@ -268,6 +284,15 @@ async def startup_seed_admin():
             logging.info(f"✅ Platform admin already exists: {admin_email}")
     except Exception as e:
         logging.error(f"⚠️ Failed to seed platform admin: {str(e)}")
+
+@app.on_event("startup")
+async def startup_scheduler():
+    """Initialize the scheduled reports scheduler"""
+    try:
+        await scheduled_reports.init_scheduler()
+        logging.info("✅ Scheduled reports scheduler initialized")
+    except Exception as e:
+        logging.error(f"⚠️ Failed to initialize scheduler: {str(e)}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

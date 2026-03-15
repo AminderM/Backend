@@ -38,6 +38,11 @@ from routes import bundle_routes
 from routes import accounting_routes
 from routes import analytics_routes
 from routes import marketing_routes
+from routes import master_data_routes
+from routes import orders_routes
+from routes import vehicles_routes
+from routes import invoices_routes
+from routes import rates_routes
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -75,6 +80,11 @@ api_router.include_router(bundle_routes.router)
 api_router.include_router(accounting_routes.router)
 api_router.include_router(analytics_routes.router)
 api_router.include_router(marketing_routes.router)
+api_router.include_router(master_data_routes.router, prefix="/master-data", tags=["Master Data"])
+api_router.include_router(orders_routes.router, prefix="/operations", tags=["Orders & Shipments"])
+api_router.include_router(vehicles_routes.router, prefix="/fleet", tags=["Vehicles & Fleet"])
+api_router.include_router(invoices_routes.router, prefix="/billing", tags=["Invoices & Billing"])
+api_router.include_router(rates_routes.router, prefix="/pricing", tags=["Rate Cards & Accessorials"])
 
 # WebSocket endpoint for real-time vehicle tracking
 @api_router.websocket("/ws/vehicle/{vehicle_id}")
@@ -109,6 +119,98 @@ async def root():
 
 # Include the API router in the main app
 app.include_router(api_router)
+
+# Serve API documentation files
+DOCS_DIR = ROOT_DIR / "static" / "docs"
+if DOCS_DIR.exists():
+    @app.get("/api/docs/download/pdf")
+    async def download_api_docs_pdf():
+        """Download API documentation as PDF"""
+        return FileResponse(
+            DOCS_DIR / "API_DOCUMENTATION.pdf",
+            media_type="application/pdf",
+            filename="TMS_API_Documentation.pdf"
+        )
+    
+    @app.get("/api/docs/download/txt")
+    async def download_api_docs_txt():
+        """Download API documentation as TXT"""
+        return FileResponse(
+            DOCS_DIR / "API_DOCUMENTATION.txt",
+            media_type="text/plain",
+            filename="TMS_API_Documentation.txt"
+        )
+    
+    @app.get("/api/docs/download/md")
+    async def download_api_docs_md():
+        """Download API documentation as Markdown"""
+        return FileResponse(
+            DOCS_DIR / "API_DOCUMENTATION.md",
+            media_type="text/markdown",
+            filename="TMS_API_Documentation.md"
+        )
+    
+    @app.get("/api/docs/download/frontend-guide")
+    async def download_frontend_guide():
+        """Download complete Frontend Developer Guide"""
+        return FileResponse(
+            DOCS_DIR / "FRONTEND_DEVELOPER_GUIDE.md",
+            media_type="text/markdown",
+            filename="TMS_Frontend_Developer_Guide.md"
+        )
+    
+    @app.get("/api/docs/download/frontend-guide-txt")
+    async def download_frontend_guide_txt():
+        """Download Frontend Developer Guide as TXT"""
+        return FileResponse(
+            DOCS_DIR / "FRONTEND_DEVELOPER_GUIDE.txt",
+            media_type="text/plain",
+            filename="TMS_Frontend_Developer_Guide.txt"
+        )
+    
+    @app.get("/api/docs/download/user-management-pdf")
+    async def download_user_management_pdf():
+        """Download User Management Structure diagram"""
+        return FileResponse(
+            DOCS_DIR / "USER_MANAGEMENT_STRUCTURE.pdf",
+            media_type="application/pdf",
+            filename="TMS_User_Management_Structure.pdf"
+        )
+    
+    @app.get("/api/docs/list")
+    async def list_available_docs():
+        """List all available documentation files"""
+        return {
+            "documents": [
+                {
+                    "name": "Frontend Developer Guide",
+                    "description": "Complete guide for frontend developers including API reference, data models, and UI/UX requirements",
+                    "formats": ["md", "txt"],
+                    "download_urls": {
+                        "md": "/api/docs/download/frontend-guide",
+                        "txt": "/api/docs/download/frontend-guide-txt"
+                    }
+                },
+                {
+                    "name": "API Documentation",
+                    "description": "Detailed API endpoint reference",
+                    "formats": ["pdf", "md", "txt"],
+                    "download_urls": {
+                        "pdf": "/api/docs/download/pdf",
+                        "md": "/api/docs/download/md",
+                        "txt": "/api/docs/download/txt"
+                    }
+                },
+                {
+                    "name": "User Management Structure",
+                    "description": "Role hierarchy and workspace access diagram",
+                    "formats": ["pdf"],
+                    "download_urls": {
+                        "pdf": "/api/docs/download/user-management-pdf"
+                    }
+                }
+            ]
+        }
 
 # Serve marketing website static files under /api/site
 MARKETING_DIR = ROOT_DIR / "marketing-static"

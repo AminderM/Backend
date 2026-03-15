@@ -36,13 +36,21 @@ async def get_equipment(skip: int = 0, limit: int = 50, equipment_type: Optional
 
 @router.get("/my", response_model=List[Equipment])
 async def get_my_equipment(current_user: User = Depends(get_current_user)):
-    equipment_list = await db.equipment.find({"owner_id": current_user.id}).to_list(length=None)
+    # Platform admin sees all equipment
+    if current_user.role == UserRole.PLATFORM_ADMIN:
+        equipment_list = await db.equipment.find({}, {"_id": 0}).to_list(length=None)
+    else:
+        equipment_list = await db.equipment.find({"owner_id": current_user.id}, {"_id": 0}).to_list(length=None)
     return [Equipment(**equipment) for equipment in equipment_list]
 
 @router.get("/my/locations", response_model=List[dict])
 async def get_my_equipment_locations(current_user: User = Depends(get_current_user)):
     """Get all equipment with their current locations and associated driver/load info for fleet tracking"""
-    equipment_list = await db.equipment.find({"owner_id": current_user.id}).to_list(length=None)
+    # Platform admin sees all equipment
+    if current_user.role == UserRole.PLATFORM_ADMIN:
+        equipment_list = await db.equipment.find({}, {"_id": 0}).to_list(length=None)
+    else:
+        equipment_list = await db.equipment.find({"owner_id": current_user.id}, {"_id": 0}).to_list(length=None)
     
     result = []
     for equipment in equipment_list:

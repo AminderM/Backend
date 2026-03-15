@@ -1,0 +1,1357 @@
+# TMS SAAS - Complete Backend Documentation
+## For Frontend Developers & UI/UX Design
+
+**Version:** 2.0  
+**Last Updated:** March 2026  
+**API Base URL:** `https://your-api-domain.com/api`
+
+---
+
+# Table of Contents
+
+1. [System Overview](#1-system-overview)
+2. [Authentication & Authorization](#2-authentication--authorization)
+3. [User Roles & Workspace Access](#3-user-roles--workspace-access)
+4. [API Endpoints Reference](#4-api-endpoints-reference)
+5. [Data Models & Schemas](#5-data-models--schemas)
+6. [UI/UX Requirements by Module](#6-uiux-requirements-by-module)
+7. [Error Handling](#7-error-handling)
+8. [Frontend Integration Guide](#8-frontend-integration-guide)
+
+---
+
+# 1. System Overview
+
+## What is this application?
+
+A **Transportation Management System (TMS)** for Canadian trucking companies. It manages:
+- Orders & Shipments (freight booking, dispatch, tracking)
+- Fleet Management (vehicles, inspections, maintenance)
+- Invoicing & Billing (PDF invoices, payments, AR)
+- Rate Cards & Pricing (lane rates, accessorial charges)
+- User Management (roles, permissions, multi-tenant)
+
+## Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   TMS Dashboard │     │   Driver PWA    │     │  Admin Portal   │
+│    (React)      │     │    (React)      │     │    (React)      │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+                                 ▼
+                    ┌─────────────────────────┐
+                    │    FastAPI Backend      │
+                    │   /api/* endpoints      │
+                    └────────────┬────────────┘
+                                 │
+                                 ▼
+                    ┌─────────────────────────┐
+                    │       MongoDB           │
+                    └─────────────────────────┘
+```
+
+## Multi-Tenancy
+
+The system is **multi-tenant** (SAAS):
+- Each company is a "tenant" with isolated data
+- Users belong to one tenant (except platform_admin)
+- All API responses are filtered by `tenant_id`
+
+## Canada-First Design
+
+- Tax calculations use Canadian GST/HST/PST/QST
+- Worker types: T4 Employee, T4A Contractor (not W2/1099)
+- License classes: Class 1/A, Class 3/D (not CDL)
+- Regulatory numbers: NSC, CVOR (not MC, USDOT)
+- Currency: CAD (with USD support for cross-border)
+
+---
+
+# 2. Authentication & Authorization
+
+## Authentication Flow
+
+```
+┌──────────┐         ┌──────────┐         ┌──────────┐
+│  Login   │────────▶│  Backend │────────▶│   JWT    │
+│  Form    │ POST    │ Validates│ Returns │  Token   │
+└──────────┘/login   └──────────┘         └──────────┘
+                                                │
+                     Store in localStorage ◀────┘
+                                                │
+┌──────────┐         ┌──────────┐              │
+│  API     │────────▶│  Backend │◀─────────────┘
+│  Request │ + Auth  │ Validates│  Authorization:
+└──────────┘ Header  └──────────┘  Bearer <token>
+```
+
+## Login Endpoint
+
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "bearer",
+  "user": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "full_name": "John Doe",
+    "role": "dispatcher",
+    "tenant_id": "company-uuid",
+    "worker_type": "t4_employee",
+    "operating_provinces": ["ON", "QC"]
+  },
+  "registration_status": "verified",
+  "allowed_workspaces": ["dashboard", "dispatch", "fleet", "driver_app"]
+}
+```
+
+## Using the Token
+
+All subsequent API calls must include:
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+
+## Token Expiry
+
+- Tokens expire after **7 days**
+- On 401 response, redirect to login
+- No refresh token mechanism (re-login required)
+
+## Get Current User
+
+```http
+GET /api/auth/me
+Authorization: Bearer <token>
+```
+
+## Get Allowed Workspaces
+
+```http
+GET /api/auth/workspaces
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "allowed_workspaces": ["dashboard", "dispatch", "fleet"],
+  "workspace_details": {
+    "dashboard": {"name": "Dashboard", "icon": "home", "path": "/dashboard"},
+    "dispatch": {"name": "Dispatch Operations", "icon": "truck", "path": "/dispatch"},
+    "fleet": {"name": "Fleet Management", "icon": "truck", "path": "/fleet"}
+  },
+  "role": "dispatcher"
+}
+```
+
+---
+
+# 3. User Roles & Workspace Access
+
+## Role Hierarchy
+
+```
+Level 1: PLATFORM_ADMIN ─────────────────────────────────────────────
+         │ SAAS owner, can access ALL tenants
+         │
+Level 2: ADMIN ──────────────────────────────────────────────────────
+         │ Company admin, full access to their tenant
+         │
+Level 3: MANAGER ────────────────────────────────────────────────────
+         │ Department head, can manage teams
+         │
+Level 4: DISPATCHER ──────── BILLING ────────────────────────────────
+         │ Operations      │ Finance
+         │                 │
+Level 5: DRIVER ─────────────────────────────────────────────────────
+         │ Mobile app only
+         │
+Level 6: VIEWER ─────────────────────────────────────────────────────
+           Read-only access
+```
+
+## Workspace Access Matrix
+
+| Workspace | platform_admin | admin | manager | dispatcher | billing | driver | viewer |
+|-----------|:-------------:|:-----:|:-------:|:----------:|:-------:|:------:|:------:|
+| Dashboard | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ |
+| Dispatch Operations | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ |
+| Sales / CRM | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Accounting | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
+| HR & Users | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Fleet Management | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ |
+| Reports | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✓ |
+| Settings | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Driver App | ✓ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ |
+| Rate Cards | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
+
+## Frontend Implementation
+
+```javascript
+// On login success
+const { allowed_workspaces, user } = loginResponse;
+
+// Store in state/localStorage
+setWorkspaces(allowed_workspaces);
+setUser(user);
+
+// Filter navigation menu
+const menuItems = [
+  { id: 'dashboard', label: 'Dashboard', icon: Home, path: '/' },
+  { id: 'dispatch', label: 'Dispatch', icon: Truck, path: '/dispatch' },
+  { id: 'sales', label: 'Sales', icon: DollarSign, path: '/sales' },
+  { id: 'accounting', label: 'Accounting', icon: Calculator, path: '/accounting' },
+  { id: 'hr', label: 'HR & Users', icon: Users, path: '/hr' },
+  { id: 'fleet', label: 'Fleet', icon: Truck, path: '/fleet' },
+  { id: 'reports', label: 'Reports', icon: BarChart, path: '/reports' },
+  { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
+  { id: 'rate_cards', label: 'Rate Cards', icon: Tag, path: '/rate-cards' },
+];
+
+const visibleMenu = menuItems.filter(item => 
+  allowed_workspaces.includes(item.id)
+);
+```
+
+## Worker Types (Canadian Tax Classification)
+
+| Type | Code | Description | Use Case |
+|------|------|-------------|----------|
+| T4 Employee | `t4_employee` | Payroll employee | Company drivers |
+| T4A Contractor | `t4a_contractor` | Independent contractor | Owner-operators |
+| W2 Employee | `w2_employee` | US payroll (cross-border) | US-based drivers |
+| 1099 Contractor | `1099_contractor` | US contractor | US owner-operators |
+
+---
+
+# 4. API Endpoints Reference
+
+## Base URL Structure
+
+```
+/api/auth/*           - Authentication
+/api/master-data/*    - Carriers, Customers, Locations, Tax
+/api/operations/*     - Orders, Shipments
+/api/fleet/*          - Vehicles, Inspections, Maintenance
+/api/billing/*        - Invoices, Payments, AR Reports
+/api/pricing/*        - Rate Cards, Accessorials, Quotes
+```
+
+---
+
+## 4.1 Master Data APIs
+
+### Tax Calculator
+
+**Get All Tax Rates:**
+```http
+GET /api/master-data/tax/rates
+```
+
+**Response:**
+```json
+{
+  "AB": {"gst": 5.0, "pst": 0, "hst": 0, "total": 5.0},
+  "BC": {"gst": 5.0, "pst": 7.0, "hst": 0, "total": 12.0},
+  "ON": {"gst": 0, "pst": 0, "hst": 13.0, "total": 13.0},
+  "QC": {"gst": 5.0, "qst": 9.975, "hst": 0, "total": 14.975}
+}
+```
+
+**Calculate Tax:**
+```http
+POST /api/master-data/tax/calculate
+Content-Type: application/json
+
+{
+  "amount": 1000.00,
+  "province": "ON"
+}
+```
+
+**Response:**
+```json
+{
+  "subtotal": 1000.00,
+  "gst_rate": 0,
+  "gst_amount": 0,
+  "hst_rate": 13.0,
+  "hst_amount": 130.00,
+  "total_tax_amount": 130.00,
+  "grand_total": 1130.00
+}
+```
+
+### Carriers & Brokers
+
+**List:**
+```http
+GET /api/master-data/carriers-brokers?entity_type=carrier&status=active
+```
+
+**Create:**
+```http
+POST /api/master-data/carriers-brokers
+Content-Type: application/json
+
+{
+  "tenant_id": "tenant-uuid",
+  "company_name": "ABC Trucking Ltd",
+  "entity_type": "carrier",
+  "nsc_number": "123456",
+  "cvor_number": "12-345678",
+  "contact_name": "John Doe",
+  "contact_email": "john@abctrucking.ca",
+  "contact_phone": "416-555-1234",
+  "address": {
+    "address_line1": "123 Trucking Way",
+    "city": "Mississauga",
+    "state_province": "ON",
+    "postal_code": "L5T 1A1",
+    "country": "CA"
+  }
+}
+```
+
+### Customers
+
+**List:**
+```http
+GET /api/master-data/customers
+```
+
+**Create:**
+```http
+POST /api/master-data/customers
+Content-Type: application/json
+
+{
+  "tenant_id": "tenant-uuid",
+  "company_name": "Acme Shipping Co",
+  "contact_name": "Jane Smith",
+  "contact_email": "jane@acme.com",
+  "billing_address": {
+    "address_line1": "456 Commerce Blvd",
+    "city": "Toronto",
+    "state_province": "ON",
+    "postal_code": "M5V 1A1",
+    "country": "CA"
+  },
+  "tax_province": "ON",
+  "is_tax_exempt": false,
+  "payment_terms_days": 30
+}
+```
+
+### Locations
+
+**List:**
+```http
+GET /api/master-data/locations?location_type=warehouse
+```
+
+**Create:**
+```http
+POST /api/master-data/locations
+Content-Type: application/json
+
+{
+  "tenant_id": "tenant-uuid",
+  "name": "Toronto DC",
+  "location_type": "warehouse",
+  "address": {...},
+  "dock_count": 24,
+  "has_appointment_system": true
+}
+```
+
+---
+
+## 4.2 Orders & Shipments APIs
+
+### Orders (Sales-Facing)
+
+**Create Order:**
+```http
+POST /api/operations/orders
+Content-Type: application/json
+
+{
+  "tenant_id": "tenant-uuid",
+  "customer_id": "customer-uuid",
+  "commodity": "General Freight",
+  "weight_lbs": 42000,
+  "pieces": 24,
+  "equipment_type": "dry_van",
+  "origin_city": "Toronto",
+  "origin_state_province": "ON",
+  "destination_city": "Montreal",
+  "destination_state_province": "QC",
+  "requested_pickup_date": "2026-03-15",
+  "requested_delivery_date": "2026-03-16",
+  "customer_rate": 1800.00,
+  "fuel_surcharge": 180.00,
+  "special_instructions": "Call before delivery"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Order created successfully",
+  "id": "order-uuid",
+  "order_number": "ORD-20260315-001",
+  "total_amount": 1980.00,
+  "tax_amount": 257.40,
+  "grand_total": 2237.40
+}
+```
+
+**List Orders:**
+```http
+GET /api/operations/orders?status=pending&customer_id=xxx&from_date=2026-03-01
+```
+
+**Order Statuses:**
+| Status | Description | Color |
+|--------|-------------|-------|
+| `pending` | New order, awaiting confirmation | Yellow |
+| `confirmed` | Confirmed, ready for dispatch | Blue |
+| `dispatched` | Assigned to shipment | Purple |
+| `in_transit` | Shipment in progress | Orange |
+| `completed` | Delivered successfully | Green |
+| `invoiced` | Invoice generated | Gray |
+| `cancelled` | Order cancelled | Red |
+
+### Shipments (Operations-Facing)
+
+**Create Shipment:**
+```http
+POST /api/operations/shipments
+Content-Type: application/json
+
+{
+  "tenant_id": "tenant-uuid",
+  "order_id": "order-uuid",
+  "carrier_id": "carrier-uuid",
+  "carrier_rate": 1500.00,
+  "driver_id": "driver-uuid",
+  "vehicle_id": "vehicle-uuid",
+  "pickup_info": {
+    "location_id": "pickup-loc-uuid",
+    "scheduled_date": "2026-03-15",
+    "scheduled_time": "08:00"
+  },
+  "delivery_info": {
+    "location_id": "delivery-loc-uuid",
+    "scheduled_date": "2026-03-16",
+    "scheduled_time": "14:00"
+  }
+}
+```
+
+**Dispatch Shipment:**
+```http
+POST /api/operations/shipments/{shipment_id}/dispatch
+```
+
+**Update Status:**
+```http
+POST /api/operations/shipments/{shipment_id}/status
+Content-Type: application/json
+
+{
+  "status": "picked_up",
+  "notes": "Loaded, departing now",
+  "location": "Toronto, ON"
+}
+```
+
+**Shipment Statuses:**
+| Status | Description | Icon |
+|--------|-------------|------|
+| `pending` | Awaiting dispatch | ⏳ |
+| `dispatched` | Assigned to driver | 📤 |
+| `en_route_pickup` | Heading to pickup | 🚚→ |
+| `at_pickup` | At pickup location | 📍 |
+| `picked_up` | Loaded, in transit | ✅ |
+| `en_route_delivery` | Heading to delivery | 🚚→ |
+| `at_delivery` | At delivery location | 📍 |
+| `delivered` | Delivery complete | ✅ |
+| `completed` | POD received | 🏁 |
+
+---
+
+## 4.3 Fleet Management APIs
+
+### Vehicles
+
+**Create Vehicle:**
+```http
+POST /api/fleet/vehicles
+Content-Type: application/json
+
+{
+  "tenant_id": "tenant-uuid",
+  "unit_number": "T-101",
+  "vehicle_type": "tractor",
+  "vin": "1HGBH41JXMN109186",
+  "license_plate": "ABCD 123",
+  "license_province": "ON",
+  "year": 2023,
+  "make": "Freightliner",
+  "model": "Cascadia",
+  "specs": {
+    "engine_type": "diesel",
+    "horsepower": 505,
+    "sleeper": true
+  },
+  "current_odometer_km": 125000
+}
+```
+
+**Vehicle Types:**
+| Type | Description |
+|------|-------------|
+| `tractor` | Day cab or sleeper tractor |
+| `trailer` | Dry van, reefer, flatbed trailer |
+| `straight_truck` | Single-unit truck |
+| `cargo_van` | Sprinter/cargo van |
+
+**Get Fleet Summary:**
+```http
+GET /api/fleet/vehicles/summary
+```
+
+**Response:**
+```json
+{
+  "total_vehicles": 45,
+  "by_type": {"tractor": 20, "trailer": 22, "straight_truck": 3},
+  "by_status": {"active": 38, "maintenance": 5, "out_of_service": 2},
+  "compliance_alerts": {
+    "cvip_expiring_30_days": 3,
+    "cvip_expired": 1,
+    "pm_overdue": 2
+  }
+}
+```
+
+**Get Fleet Tracking (GPS):**
+```http
+GET /api/fleet/vehicles/fleet-tracking
+```
+
+### CVIP Inspections (Canadian)
+
+**Add Inspection:**
+```http
+POST /api/fleet/vehicles/{vehicle_id}/inspections
+Content-Type: application/json
+
+{
+  "inspection_type": "cvip_annual",
+  "inspection_date": "2026-03-01",
+  "expiry_date": "2027-03-01",
+  "inspector_name": "John Inspector",
+  "result": "pass",
+  "certificate_number": "CVIP-2026-12345"
+}
+```
+
+### Maintenance
+
+**Add Maintenance Record:**
+```http
+POST /api/fleet/vehicles/{vehicle_id}/maintenance
+Content-Type: application/json
+
+{
+  "maintenance_type": "pm_service",
+  "description": "PM-A Service",
+  "service_date": "2026-03-05",
+  "odometer_km": 130000,
+  "total_cost": 650.00,
+  "next_pm_km": 155000
+}
+```
+
+---
+
+## 4.4 Invoicing APIs
+
+### Create Invoice
+
+```http
+POST /api/billing/invoices
+Content-Type: application/json
+
+{
+  "tenant_id": "tenant-uuid",
+  "customer_id": "customer-uuid",
+  "payment_terms_days": 30,
+  "line_items": [
+    {
+      "description": "Freight - Toronto to Montreal",
+      "item_type": "freight",
+      "order_number": "ORD-001",
+      "origin": "Toronto, ON",
+      "destination": "Montreal, QC",
+      "quantity": 1,
+      "unit_price": 1800.00
+    },
+    {
+      "description": "Fuel Surcharge",
+      "item_type": "fuel_surcharge",
+      "quantity": 1,
+      "unit_price": 180.00
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "id": "invoice-uuid",
+  "invoice_number": "INV-A1B2C3D4",
+  "subtotal": 1980.00,
+  "total_tax": 257.40,
+  "grand_total": 2237.40
+}
+```
+
+### Create Invoice from Orders
+
+```http
+POST /api/billing/invoices/from-orders?tenant_id=xxx&customer_id=xxx&order_ids=order1&order_ids=order2
+```
+
+### Invoice Statuses
+
+| Status | Description | Action |
+|--------|-------------|--------|
+| `draft` | Being edited | Edit, Delete |
+| `pending` | Ready to send | Send, Edit |
+| `sent` | Sent to customer | Record Payment |
+| `partially_paid` | Partial payment received | Record Payment |
+| `paid` | Fully paid | View Only |
+| `overdue` | Past due date | Follow Up |
+| `cancelled` | Cancelled | View Only |
+
+### Download PDF
+
+```http
+GET /api/billing/invoices/{invoice_id}/pdf
+```
+Returns: PDF file download
+
+### Record Payment
+
+```http
+POST /api/billing/invoices/{invoice_id}/payments
+Content-Type: application/json
+
+{
+  "amount": 1000.00,
+  "payment_method": "bank_transfer",
+  "payment_date": "2026-03-20",
+  "reference_number": "EFT-123456"
+}
+```
+
+**Payment Methods:**
+| Method | Description |
+|--------|-------------|
+| `bank_transfer` | Wire/EFT |
+| `check` | Cheque |
+| `credit_card` | Credit card |
+| `interac` | Interac e-Transfer (Canadian) |
+| `cash` | Cash |
+| `factoring` | Third-party factoring |
+
+### AR Reports
+
+**AR Summary:**
+```http
+GET /api/billing/invoices/reports/ar-summary
+```
+
+**Response:**
+```json
+{
+  "total_outstanding": 125000.00,
+  "current": 45000.00,
+  "days_1_30": 35000.00,
+  "days_31_60": 25000.00,
+  "days_61_90": 12000.00,
+  "days_90_plus": 8000.00,
+  "total_invoices": 42,
+  "overdue_invoices": 15
+}
+```
+
+---
+
+## 4.5 Rate Cards & Pricing APIs
+
+### Accessorial Codes
+
+**Get All Codes:**
+```http
+GET /api/pricing/accessorials/codes
+```
+
+**Standard Accessorial Codes:**
+| Code | Name | Default Rate |
+|------|------|-------------|
+| `det_pickup` | Detention at Pickup | $75/hr (2hr free) |
+| `det_delivery` | Detention at Delivery | $75/hr (2hr free) |
+| `layover` | Overnight Layover | $350 flat |
+| `lumper` | Lumper Service | Pass-through |
+| `fuel_surcharge` | Fuel Surcharge | 10% of line haul |
+| `liftgate` | Liftgate Service | $75 flat |
+| `residential` | Residential Delivery | $100 flat |
+| `border_crossing` | US/Canada Border | $200 flat |
+| `pars_paps` | PARS/PAPS Processing | $50 flat |
+| `hazmat` | Hazardous Materials | $250 flat |
+
+### Rate Cards
+
+**Create Rate Card:**
+```http
+POST /api/pricing/rate-cards
+Content-Type: application/json
+
+{
+  "tenant_id": "tenant-uuid",
+  "name": "2026 Customer Rates",
+  "is_customer_rate": true,
+  "effective_date": "2026-01-01",
+  "currency": "CAD",
+  "default_rate_per_km": 2.50,
+  "default_minimum": 500.00,
+  "fuel_surcharge_percentage": 10.0,
+  "lane_rates": [
+    {
+      "origin_province": "ON",
+      "destination_province": "QC",
+      "lane_name": "ON-QC",
+      "distance_km": 540,
+      "rates": {"dry_van": 1800, "reefer": 2100},
+      "transit_days": 1
+    }
+  ]
+}
+```
+
+### Get Rate Quote
+
+```http
+POST /api/pricing/rate-cards/quote?origin_city=Toronto&origin_province=ON&destination_city=Montreal&destination_province=QC&equipment_type=dry_van&accessorial_codes=det_pickup,liftgate
+```
+
+**Response:**
+```json
+{
+  "rate_card_id": "uuid",
+  "rate_card_name": "2026 Customer Rates",
+  "origin": "Toronto, ON",
+  "destination": "Montreal, QC",
+  "distance_km": 540,
+  "line_haul": 1800.00,
+  "fuel_surcharge_percentage": 10.0,
+  "fuel_surcharge_amount": 180.00,
+  "accessorials": [
+    {"code": "det_pickup", "rate": 75.00},
+    {"code": "liftgate", "rate": 75.00}
+  ],
+  "accessorials_total": 150.00,
+  "subtotal": 2130.00
+}
+```
+
+---
+
+# 5. Data Models & Schemas
+
+## User Model
+
+```typescript
+interface User {
+  id: string;
+  email: string;
+  full_name: string;
+  phone?: string;
+  role: 'platform_admin' | 'admin' | 'manager' | 'dispatcher' | 'billing' | 'driver' | 'viewer';
+  tenant_id?: string;
+  user_type?: 'carrier' | 'broker' | 'shipper' | 'owner_operator';
+  worker_type?: 't4_employee' | 't4a_contractor' | 'w2_employee' | '1099_contractor';
+  operating_provinces: string[];
+  status: 'active' | 'inactive' | 'suspended';
+  created_at: string;
+  last_login_at?: string;
+}
+```
+
+## Order Model
+
+```typescript
+interface Order {
+  id: string;
+  order_number: string;
+  tenant_id: string;
+  customer_id: string;
+  
+  // Commodity
+  commodity: string;
+  weight_lbs?: number;
+  pieces?: number;
+  equipment_type: 'dry_van' | 'reefer' | 'flatbed' | 'step_deck';
+  
+  // Origin
+  origin_city: string;
+  origin_state_province: string;
+  origin_postal_code?: string;
+  
+  // Destination
+  destination_city: string;
+  destination_state_province: string;
+  destination_postal_code?: string;
+  
+  // Dates
+  requested_pickup_date: string;
+  requested_delivery_date: string;
+  
+  // Pricing
+  customer_rate: number;
+  fuel_surcharge?: number;
+  accessorials: Accessorial[];
+  total_amount: number;
+  tax_amount: number;
+  grand_total: number;
+  
+  // Status
+  status: 'pending' | 'confirmed' | 'dispatched' | 'completed' | 'invoiced' | 'cancelled';
+  
+  created_at: string;
+}
+```
+
+## Vehicle Model
+
+```typescript
+interface Vehicle {
+  id: string;
+  tenant_id: string;
+  unit_number: string;
+  vehicle_type: 'tractor' | 'trailer' | 'straight_truck' | 'cargo_van';
+  
+  // Identification
+  vin: string;
+  license_plate: string;
+  license_province: string;
+  
+  // Details
+  year: number;
+  make: string;
+  model: string;
+  
+  // Specs
+  specs: {
+    engine_type?: string;
+    horsepower?: number;
+    sleeper?: boolean;
+    trailer_type?: string;
+    length_feet?: number;
+  };
+  
+  // Tracking
+  current_odometer_km: number;
+  last_location?: {
+    latitude: number;
+    longitude: number;
+    updated_at: string;
+  };
+  
+  // Status
+  status: 'active' | 'inactive' | 'maintenance' | 'out_of_service';
+  
+  // Compliance
+  cvip_expiry?: string;
+  next_pm_due_km?: number;
+  next_pm_due_date?: string;
+}
+```
+
+## Invoice Model
+
+```typescript
+interface Invoice {
+  id: string;
+  invoice_number: string;
+  tenant_id: string;
+  customer_id: string;
+  customer_name: string;
+  
+  // Dates
+  invoice_date: string;
+  due_date: string;
+  
+  // Line Items
+  line_items: LineItem[];
+  
+  // Totals
+  subtotal: number;
+  gst_amount: number;
+  pst_amount: number;
+  hst_amount: number;
+  qst_amount: number;
+  total_tax: number;
+  grand_total: number;
+  
+  // Payments
+  amount_paid: number;
+  balance_due: number;
+  payments: Payment[];
+  
+  // Status
+  status: 'draft' | 'pending' | 'sent' | 'partially_paid' | 'paid' | 'overdue' | 'cancelled';
+}
+
+interface LineItem {
+  id: string;
+  description: string;
+  item_type: 'freight' | 'fuel_surcharge' | 'accessorial';
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+}
+```
+
+---
+
+# 6. UI/UX Requirements by Module
+
+## 6.1 Dashboard
+
+**Purpose:** Overview of key metrics and alerts
+
+**Components:**
+- KPI Cards (Orders today, Revenue, Active shipments, Fleet utilization)
+- Recent Orders table (last 10)
+- Shipment status breakdown (pie chart)
+- Compliance alerts (CVIP expiring, PM overdue)
+- AR aging summary
+
+**Data Sources:**
+- `GET /api/operations/orders?limit=10`
+- `GET /api/fleet/vehicles/summary`
+- `GET /api/billing/invoices/reports/ar-summary`
+
+## 6.2 Dispatch Operations
+
+**Purpose:** Manage orders and shipments
+
+**Views:**
+1. **Order Board** - Kanban style (Pending → Confirmed → Dispatched → Completed)
+2. **Shipment Tracking** - Map view with live locations
+3. **Load Calendar** - Calendar view of pickups/deliveries
+
+**Key Actions:**
+- Create Order
+- Confirm Order
+- Create Shipment from Order
+- Dispatch Shipment
+- Update Shipment Status
+
+**Real-time Updates:**
+- Use WebSocket for live tracking: `ws://api/ws/vehicle/{vehicle_id}`
+
+## 6.3 Fleet Management
+
+**Purpose:** Vehicle and equipment management
+
+**Views:**
+1. **Vehicle List** - Table with filters (type, status)
+2. **Vehicle Detail** - Specs, inspection history, maintenance log
+3. **Fleet Map** - Real-time locations of all vehicles
+4. **Compliance Dashboard** - CVIP/PM due dates
+
+**Alerts to Display:**
+- CVIP expiring within 30 days (Yellow)
+- CVIP expired (Red)
+- PM overdue by mileage (Orange)
+- PM overdue by date (Orange)
+
+## 6.4 Accounting / Billing
+
+**Purpose:** Invoice management and AR
+
+**Views:**
+1. **Invoice List** - Filter by status, customer, date range
+2. **Create Invoice** - Multi-step form
+3. **Invoice Detail** - Line items, payments, PDF preview
+4. **AR Dashboard** - Aging buckets, customer breakdown
+
+**Key Actions:**
+- Create Invoice (manual or from orders)
+- Send Invoice
+- Record Payment
+- Download PDF
+- Generate AR Report
+
+## 6.5 Rate Cards
+
+**Purpose:** Pricing management
+
+**Views:**
+1. **Rate Card List** - Active, draft, expired
+2. **Rate Card Editor** - Lane rates, accessorials
+3. **Rate Quote Calculator** - Get instant quote
+
+**Features:**
+- Add/remove lane rates
+- Override accessorial rates per customer
+- Activate/deactivate rate cards
+
+## 6.6 HR & Users
+
+**Purpose:** User management (Admin only)
+
+**Views:**
+1. **User List** - All users in tenant
+2. **User Detail** - Edit role, permissions, status
+3. **Create User** - Registration form
+
+**Role Assignment:**
+- Only admin can assign roles
+- Cannot assign role higher than own
+
+## 6.7 Driver App (PWA)
+
+**Purpose:** Mobile interface for drivers
+
+**Views:**
+1. **My Loads** - Assigned shipments
+2. **Load Detail** - Pickup/delivery info, directions
+3. **Status Update** - Quick status buttons
+4. **Document Upload** - POD, BOL photos
+
+**Offline Support:**
+- Cache assigned loads
+- Queue status updates when offline
+
+---
+
+# 7. Error Handling
+
+## HTTP Status Codes
+
+| Code | Meaning | Action |
+|------|---------|--------|
+| 200 | Success | Process response |
+| 201 | Created | Show success message |
+| 400 | Bad Request | Show validation errors |
+| 401 | Unauthorized | Redirect to login |
+| 403 | Forbidden | Show "Access Denied" |
+| 404 | Not Found | Show "Not Found" |
+| 422 | Validation Error | Show field errors |
+| 500 | Server Error | Show generic error |
+
+## Error Response Format
+
+```json
+{
+  "detail": "Error message here"
+}
+```
+
+Or for validation errors:
+```json
+{
+  "detail": [
+    {
+      "loc": ["body", "email"],
+      "msg": "value is not a valid email address",
+      "type": "value_error.email"
+    }
+  ]
+}
+```
+
+## Frontend Error Handling
+
+```typescript
+async function apiCall(endpoint: string, options?: RequestInit) {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${getToken()}`,
+      ...options?.headers,
+    },
+  });
+  
+  if (response.status === 401) {
+    // Token expired - redirect to login
+    logout();
+    return;
+  }
+  
+  if (response.status === 403) {
+    // Access denied
+    showToast('You do not have permission to perform this action', 'error');
+    return;
+  }
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'An error occurred');
+  }
+  
+  return response.json();
+}
+```
+
+---
+
+# 8. Frontend Integration Guide
+
+## Project Setup
+
+```bash
+# Recommended stack
+npx create-react-app tms-dashboard --template typescript
+cd tms-dashboard
+
+# Install dependencies
+npm install axios react-query react-router-dom zustand
+npm install @tanstack/react-table recharts date-fns
+npm install lucide-react tailwindcss
+```
+
+## API Client Setup
+
+```typescript
+// src/lib/api.ts
+import axios from 'axios';
+
+const API_BASE = process.env.REACT_APP_API_URL || 'https://api.example.com/api';
+
+export const api = axios.create({
+  baseURL: API_BASE,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Add auth token to requests
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Handle auth errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+```
+
+## Auth Context
+
+```typescript
+// src/contexts/AuthContext.tsx
+import { createContext, useContext, useState, useEffect } from 'react';
+import { api } from '../lib/api';
+
+interface User {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  tenant_id?: string;
+}
+
+interface AuthContextType {
+  user: User | null;
+  workspaces: string[];
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+  hasWorkspace: (workspace: string) => boolean;
+}
+
+const AuthContext = createContext<AuthContextType>(null!);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [workspaces, setWorkspaces] = useState<string[]>([]);
+  
+  useEffect(() => {
+    // Check for existing session
+    const token = localStorage.getItem('token');
+    if (token) {
+      api.get('/auth/me').then(res => {
+        setUser(res.data);
+        return api.get('/auth/workspaces');
+      }).then(res => {
+        setWorkspaces(res.data.allowed_workspaces);
+      }).catch(() => {
+        localStorage.removeItem('token');
+      });
+    }
+  }, []);
+  
+  const login = async (email: string, password: string) => {
+    const res = await api.post('/auth/login', { email, password });
+    localStorage.setItem('token', res.data.access_token);
+    setUser(res.data.user);
+    setWorkspaces(res.data.allowed_workspaces);
+  };
+  
+  const logout = () => {
+    localStorage.removeItem('token');
+    setUser(null);
+    setWorkspaces([]);
+  };
+  
+  const hasWorkspace = (workspace: string) => workspaces.includes(workspace);
+  
+  return (
+    <AuthContext.Provider value={{ user, workspaces, login, logout, hasWorkspace }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export const useAuth = () => useContext(AuthContext);
+```
+
+## Protected Route
+
+```typescript
+// src/components/ProtectedRoute.tsx
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+
+interface Props {
+  children: React.ReactNode;
+  workspace?: string;
+}
+
+export function ProtectedRoute({ children, workspace }: Props) {
+  const { user, hasWorkspace } = useAuth();
+  
+  if (!user) {
+    return <Navigate to="/login" />;
+  }
+  
+  if (workspace && !hasWorkspace(workspace)) {
+    return <Navigate to="/unauthorized" />;
+  }
+  
+  return <>{children}</>;
+}
+```
+
+## Navigation Component
+
+```typescript
+// src/components/Sidebar.tsx
+import { useAuth } from '../contexts/AuthContext';
+import { 
+  Home, Truck, DollarSign, Calculator, 
+  Users, BarChart, Settings, Tag 
+} from 'lucide-react';
+
+const menuItems = [
+  { id: 'dashboard', label: 'Dashboard', icon: Home, path: '/' },
+  { id: 'dispatch', label: 'Dispatch', icon: Truck, path: '/dispatch' },
+  { id: 'sales', label: 'Sales', icon: DollarSign, path: '/sales' },
+  { id: 'accounting', label: 'Accounting', icon: Calculator, path: '/accounting' },
+  { id: 'hr', label: 'HR & Users', icon: Users, path: '/hr' },
+  { id: 'fleet', label: 'Fleet', icon: Truck, path: '/fleet' },
+  { id: 'reports', label: 'Reports', icon: BarChart, path: '/reports' },
+  { id: 'rate_cards', label: 'Rate Cards', icon: Tag, path: '/rate-cards' },
+  { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
+];
+
+export function Sidebar() {
+  const { hasWorkspace } = useAuth();
+  
+  const visibleItems = menuItems.filter(item => hasWorkspace(item.id));
+  
+  return (
+    <nav>
+      {visibleItems.map(item => (
+        <Link key={item.id} to={item.path}>
+          <item.icon />
+          <span>{item.label}</span>
+        </Link>
+      ))}
+    </nav>
+  );
+}
+```
+
+---
+
+# Quick Reference Card
+
+## Most Used Endpoints
+
+| Action | Method | Endpoint |
+|--------|--------|----------|
+| Login | POST | `/api/auth/login` |
+| Get User | GET | `/api/auth/me` |
+| Get Workspaces | GET | `/api/auth/workspaces` |
+| List Orders | GET | `/api/operations/orders` |
+| Create Order | POST | `/api/operations/orders` |
+| List Shipments | GET | `/api/operations/shipments` |
+| Update Shipment Status | POST | `/api/operations/shipments/{id}/status` |
+| List Vehicles | GET | `/api/fleet/vehicles` |
+| Fleet Summary | GET | `/api/fleet/vehicles/summary` |
+| List Invoices | GET | `/api/billing/invoices` |
+| Create Invoice | POST | `/api/billing/invoices` |
+| Download PDF | GET | `/api/billing/invoices/{id}/pdf` |
+| Get Rate Quote | POST | `/api/pricing/rate-cards/quote` |
+| Calculate Tax | POST | `/api/master-data/tax/calculate` |
+
+## Canadian Tax Rates (2026)
+
+| Province | Total Tax |
+|----------|-----------|
+| AB | 5% GST |
+| BC | 12% (5% GST + 7% PST) |
+| ON | 13% HST |
+| QC | 14.975% (5% GST + 9.975% QST) |
+| NS/NB/NL/PE | 15% HST |
+
+---
+
+**Questions?** Contact the backend team or refer to the API at `/api/docs` (Swagger UI).

@@ -8,7 +8,7 @@ import json
 import sys
 
 class TMSEdgeCaseTester:
-    def __init__(self, base_url="https://accessorial-charges.preview.emergentagent.com"):
+    def __init__(self, base_url="https://backend-features-dev.preview.emergentagent.com"):
         self.base_url = base_url.rstrip('/')
         self.token = None
         self.headers = {'Content-Type': 'application/json'}

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, BackgroundTasks
-from models import User, Booking, BookingCreate, DispatchUpdate
+from models import User, Booking, BookingCreate, DispatchUpdate, UserRole
 from auth import get_current_user
 from database import db
 from datetime import datetime, timezone, timedelta
@@ -144,7 +144,11 @@ async def create_booking(booking_data: BookingCreate, background_tasks: Backgrou
 
 @router.get("/my", response_model=List[Booking])
 async def get_my_bookings(current_user: User = Depends(get_current_user)):
-    bookings = await db.bookings.find({"requester_id": current_user.id}).to_list(length=None)
+    # Platform admin sees all bookings
+    if current_user.role == UserRole.PLATFORM_ADMIN:
+        bookings = await db.bookings.find({}, {"_id": 0}).to_list(length=500)
+    else:
+        bookings = await db.bookings.find({"requester_id": current_user.id}, {"_id": 0}).to_list(length=None)
     return [Booking(**booking) for booking in bookings]
 
 @router.get("/requests")

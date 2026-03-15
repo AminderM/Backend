@@ -38,12 +38,18 @@ from routes import bundle_routes
 from routes import accounting_routes
 from routes import analytics_routes
 from routes import marketing_routes
+from routes import customer_analytics_routes
+from routes import dashboard_routes
+from routes import scheduled_reports
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # WebSocket Manager
 manager = ConnectionManager()
+
+# Set websocket manager for customer analytics real-time updates
+customer_analytics_routes.set_websocket_manager(manager)
 
 # Create the main app
 app = FastAPI(title="Fleet Marketplace API")
@@ -75,6 +81,9 @@ api_router.include_router(bundle_routes.router)
 api_router.include_router(accounting_routes.router)
 api_router.include_router(analytics_routes.router)
 api_router.include_router(marketing_routes.router)
+api_router.include_router(customer_analytics_routes.router)
+api_router.include_router(dashboard_routes.router)
+api_router.include_router(scheduled_reports.router)
 
 # WebSocket endpoint for real-time vehicle tracking
 @api_router.websocket("/ws/vehicle/{vehicle_id}")
@@ -91,6 +100,23 @@ async def vehicle_websocket_endpoint(websocket: WebSocket, vehicle_id: str):
     finally:
         manager.disconnect_vehicle(websocket, vehicle_id)
 
+# WebSocket endpoint for real-time analytics dashboard
+@api_router.websocket("/ws/analytics")
+async def analytics_websocket_endpoint(websocket: WebSocket, token: str = None):
+    """WebSocket endpoint for real-time analytics dashboard updates"""
+    await manager.connect_analytics(websocket)
+    try:
+        while True:
+            # Keep connection alive, handle any incoming messages
+            data = await websocket.receive_text()
+            # Echo back for ping/pong
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect_analytics(websocket)
+
 # CORS Middleware - must be added before routes
 app.add_middleware(
     CORSMiddleware,
@@ -101,8 +127,106 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+# Root endpoint
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {"message": "server is running"}
+
 # Include the API router in the main app
 app.include_router(api_router)
+
+# Serve API documentation files
+DOCS_DIR = ROOT_DIR / "static" / "docs"
+if DOCS_DIR.exists():
+    @app.get("/api/docs/download/pdf")
+    async def download_api_docs_pdf():
+        """Download API documentation as PDF"""
+        return FileResponse(
+            DOCS_DIR / "API_DOCUMENTATION.pdf",
+            media_type="application/pdf",
+            filename="TMS_API_Documentation.pdf"
+        )
+    
+    @app.get("/api/docs/download/txt")
+    async def download_api_docs_txt():
+        """Download API documentation as TXT"""
+        return FileResponse(
+            DOCS_DIR / "API_DOCUMENTATION.txt",
+            media_type="text/plain",
+            filename="TMS_API_Documentation.txt"
+        )
+    
+    @app.get("/api/docs/download/md")
+    async def download_api_docs_md():
+        """Download API documentation as Markdown"""
+        return FileResponse(
+            DOCS_DIR / "API_DOCUMENTATION.md",
+            media_type="text/markdown",
+            filename="TMS_API_Documentation.md"
+        )
+    
+    @app.get("/api/docs/download/frontend-guide")
+    async def download_frontend_guide():
+        """Download complete Frontend Developer Guide"""
+        return FileResponse(
+            DOCS_DIR / "FRONTEND_DEVELOPER_GUIDE.md",
+            media_type="text/markdown",
+            filename="TMS_Frontend_Developer_Guide.md"
+        )
+    
+    @app.get("/api/docs/download/frontend-guide-txt")
+    async def download_frontend_guide_txt():
+        """Download Frontend Developer Guide as TXT"""
+        return FileResponse(
+            DOCS_DIR / "FRONTEND_DEVELOPER_GUIDE.txt",
+            media_type="text/plain",
+            filename="TMS_Frontend_Developer_Guide.txt"
+        )
+    
+    @app.get("/api/docs/download/user-management-pdf")
+    async def download_user_management_pdf():
+        """Download User Management Structure diagram"""
+        return FileResponse(
+            DOCS_DIR / "USER_MANAGEMENT_STRUCTURE.pdf",
+            media_type="application/pdf",
+            filename="TMS_User_Management_Structure.pdf"
+        )
+    
+    @app.get("/api/docs/list")
+    async def list_available_docs():
+        """List all available documentation files"""
+        return {
+            "documents": [
+                {
+                    "name": "Frontend Developer Guide",
+                    "description": "Complete guide for frontend developers including API reference, data models, and UI/UX requirements",
+                    "formats": ["md", "txt"],
+                    "download_urls": {
+                        "md": "/api/docs/download/frontend-guide",
+                        "txt": "/api/docs/download/frontend-guide-txt"
+                    }
+                },
+                {
+                    "name": "API Documentation",
+                    "description": "Detailed API endpoint reference",
+                    "formats": ["pdf", "md", "txt"],
+                    "download_urls": {
+                        "pdf": "/api/docs/download/pdf",
+                        "md": "/api/docs/download/md",
+                        "txt": "/api/docs/download/txt"
+                    }
+                },
+                {
+                    "name": "User Management Structure",
+                    "description": "Role hierarchy and workspace access diagram",
+                    "formats": ["pdf"],
+                    "download_urls": {
+                        "pdf": "/api/docs/download/user-management-pdf"
+                    }
+                }
+            ]
+        }
 
 # Serve marketing website static files under /api/site
 MARKETING_DIR = ROOT_DIR / "marketing-static"
@@ -160,6 +284,15 @@ async def startup_seed_admin():
             logging.info(f"✅ Platform admin already exists: {admin_email}")
     except Exception as e:
         logging.error(f"⚠️ Failed to seed platform admin: {str(e)}")
+
+@app.on_event("startup")
+async def startup_scheduler():
+    """Initialize the scheduled reports scheduler"""
+    try:
+        await scheduled_reports.init_scheduler()
+        logging.info("✅ Scheduled reports scheduler initialized")
+    except Exception as e:
+        logging.error(f"⚠️ Failed to initialize scheduler: {str(e)}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

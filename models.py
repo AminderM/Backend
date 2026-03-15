@@ -4,26 +4,35 @@ from enum import Enum
 from datetime import datetime, timezone
 import uuid
 
-# Enums
-class UserRole(str, Enum):
-    PLATFORM_ADMIN = "platform_admin"  # Platform owner (SAAS provider)
-    COMPANY_ADMIN = "company_admin"    # Customer company admin
-    MANAGER = "manager"                # Company manager
-    DISPATCHER = "dispatcher"          # Dispatcher role
-    ACCOUNTANT = "accountant"          # Accountant role
-    HR_MANAGER = "hr_manager"          # HR Manager role
-    SALES_MANAGER = "sales_manager"    # Sales Manager role
-    DRIVER = "driver"                  # Driver role
-    FLEET_MANAGER = "fleet_manager"    # Fleet Manager role
-    # Legacy roles (keep for backward compatibility)
-    FLEET_OWNER = "fleet_owner"        # Legacy - maps to COMPANY_ADMIN
-    MANUFACTURER = "manufacturer"
-    CONSTRUCTION_COMPANY = "construction_company"
-    WAREHOUSE = "warehouse"
-    ACCOUNTS_RECEIVABLE = "accounts_receivable"
-    ACCOUNTS_PAYABLE = "accounts_payable"
-    HR = "hr"
+# Import new user models (Canada-first design)
+from models_user import (
+    UserRole,
+    UserType,
+    WorkerType,
+    RegistrationStatus,
+    UserStatus,
+    LicenseClass,
+    LicenseEndorsement,
+    CanadianProvince,
+    ROLE_MIGRATION_MAP,
+    WORKER_TYPE_LABELS,
+    LICENSE_CLASS_LABELS,
+    PROVINCE_NAMES,
+    DEFAULT_ROLE_PERMISSIONS,
+    normalize_role,
+    get_user_permissions,
+    has_permission,
+    UserBase,
+    UserCreate,
+    UserLogin,
+    UserUpdate,
+    User,
+    UserResponse,
+    DriverCreate,
+    DriverUpdate,
+)
 
+# Company Types
 class CompanyType(str, Enum):
     TRUCKING = "trucking"
     MANUFACTURING = "manufacturing"
@@ -31,6 +40,7 @@ class CompanyType(str, Enum):
     WAREHOUSE = "warehouse"
     EQUIPMENT_RENTAL = "equipment_rental"
 
+# Equipment/Vehicle Types
 class EquipmentType(str, Enum):
     BOX_TRUCK = "box_truck"
     SPRINTER_VAN = "sprinter_van"
@@ -44,54 +54,8 @@ class EquipmentType(str, Enum):
     EXCAVATOR = "excavator"
     TRACTOR = "tractor"
 
-class RegistrationStatus(str, Enum):
-    PENDING = "pending"
-    VERIFIED = "verified"
-    REJECTED = "rejected"
-
-# User Models
-class UserBase(BaseModel):
-    email: EmailStr
-    full_name: str
-    phone: str
-    role: UserRole
-    
-class UserCreate(UserBase):
-    password: str
-
-class DriverCreate(BaseModel):
-    email: EmailStr
-    full_name: str
-    phone: str
-    password: str
-    # Extended driver fields
-    license_number: Optional[str] = None
-    license_type: Optional[str] = None  # CDL_A, CDL_B, CDL_C, NON_CDL
-    license_state: Optional[str] = None
-    license_expiry: Optional[str] = None
-    medical_card_expiry: Optional[str] = None
-    endorsements: Optional[List[str]] = []
-    hire_date: Optional[str] = None
-    home_terminal: Optional[str] = None
-    emergency_contact_name: Optional[str] = None
-    emergency_contact_phone: Optional[str] = None
-    driver_status: Optional[str] = "available"
-    notes: Optional[str] = None
-    
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-
-class User(UserBase):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    is_active: bool = True
-    registration_status: RegistrationStatus = RegistrationStatus.PENDING
-    fleet_owner_id: Optional[str] = None  # For drivers
-    email_verified: bool = False
-    verification_token: Optional[str] = None
-    token_expires_at: Optional[datetime] = None
-    password_hash: Optional[str] = None  # For storing hashed password
+# Note: UserRole, RegistrationStatus, UserBase, UserCreate, UserLogin, User, DriverCreate
+# are now imported from models_user.py (Canada-first design)
 
 # Document Models
 class DocumentVersion(BaseModel):

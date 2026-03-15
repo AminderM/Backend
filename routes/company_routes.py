@@ -53,7 +53,23 @@ async def create_company(company_data: CompanyCreate, background_tasks: Backgrou
 
 @router.get("/my", response_model=Company)
 async def get_my_company(current_user: User = Depends(get_current_user)):
-    company = await db.companies.find_one({"owner_id": current_user.id})
+    # Platform admin may not have a company - return first company or create a default response
+    if current_user.role == UserRole.PLATFORM_ADMIN:
+        # Try to find any company for platform admin
+        company = await db.companies.find_one({}, {"_id": 0})
+        if not company:
+            # Return a platform company placeholder
+            return Company(
+                id="platform-admin",
+                owner_id=current_user.id,
+                name="Platform Administration",
+                dot_number="N/A",
+                mc_number="N/A",
+                status="verified"
+            )
+        return Company(**company)
+    
+    company = await db.companies.find_one({"owner_id": current_user.id}, {"_id": 0})
     if not company:
         raise HTTPException(status_code=404, detail="No company found for this user")
     return Company(**company)

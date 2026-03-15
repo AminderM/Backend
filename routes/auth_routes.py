@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from models import User, UserCreate, UserLogin, UserRole, RegistrationStatus
-from auth import get_current_user, hash_password, verify_password, create_access_token
+from auth import get_current_user, hash_password, verify_password, create_access_token, get_workspaces_for_user
 from database import db
 from datetime import datetime, timezone, timedelta
 import secrets
@@ -62,13 +62,47 @@ async def login_user(login_data: UserLogin):
     # Create access token with user ID (not email)
     access_token = create_access_token(data={"sub": user["id"], "role": user["role"]})
     
+    # Get allowed workspaces for the user's role
+    user_obj = User(**user)
+    workspaces = get_workspaces_for_user(user_obj)
+    
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": User(**user).dict(),
-        "registration_status": user["registration_status"]
+        "user": user_obj.dict(),
+        "registration_status": user["registration_status"],
+        "allowed_workspaces": workspaces
     }
 
 @router.get("/me", response_model=User)
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.get("/workspaces", response_model=dict)
+async def get_user_workspaces_endpoint(current_user: User = Depends(get_current_user)):
+    """
+    Get list of workspaces the current user has access to.
+    Frontend should call this on login to filter sidebar/menu items.
+    """
+    workspaces = get_workspaces_for_user(current_user)
+    
+    # Also return workspace details for frontend
+    workspace_details = {
+        "dashboard": {"name": "Dashboard", "icon": "home", "path": "/dashboard"},
+        "dispatch": {"name": "Dispatch Operations", "icon": "truck", "path": "/dispatch"},
+        "sales": {"name": "Sales / CRM", "icon": "dollar-sign", "path": "/sales"},
+        "accounting": {"name": "Accounting", "icon": "calculator", "path": "/accounting"},
+        "hr": {"name": "HR & Users", "icon": "users", "path": "/hr"},
+        "fleet": {"name": "Fleet Management", "icon": "truck", "path": "/fleet"},
+        "reports": {"name": "Reports & Analytics", "icon": "bar-chart", "path": "/reports"},
+        "settings": {"name": "Settings", "icon": "settings", "path": "/settings"},
+        "driver_app": {"name": "Driver App", "icon": "smartphone", "path": "/driver"},
+        "rate_cards": {"name": "Rate Cards", "icon": "tag", "path": "/rate-cards"},
+    }
+    
+    return {
+        "allowed_workspaces": workspaces,
+        "workspace_details": {ws: workspace_details.get(ws, {}) for ws in workspaces},
+        "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
+    }

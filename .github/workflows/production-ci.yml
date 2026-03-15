@@ -130,13 +130,13 @@ jobs:
 
             # ── Write .env file from GitHub vars (overwrites each deploy) ─────
             echo "📝 Writing production .env file..."
-            cat > .env << ENVEOF
-MONGO_URL=${MONGO_URL}
-DB_NAME=fleetdb_prod
-JWT_SECRET=${JWT_SECRET}
-EMERGENT_LLM_KEY=${EMERGENT_LLM_KEY}
-FMCSA_API_KEY=${FMCSA_API_KEY}
-ENVEOF
+            {
+              echo "MONGO_URL=${MONGO_URL}"
+              echo "DB_NAME=fleetdb_prod"
+              echo "JWT_SECRET=${JWT_SECRET}"
+              echo "EMERGENT_LLM_KEY=${EMERGENT_LLM_KEY}"
+              echo "FMCSA_API_KEY=${FMCSA_API_KEY}"
+            } > .env
             echo "✅ .env written"
 
             # ── Create venv if it doesn't exist ───────────────────────────────

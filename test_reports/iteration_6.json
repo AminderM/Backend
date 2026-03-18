@@ -1,3 +1,10 @@
+Step 3: Save the file
+
+Issue 2: iteration_6.json
+Step 1: Open the file app/test_reports/iteration_6.json
+
+Step 2: Delete everything and replace with this:
+
 {
   "summary": "Completed comprehensive backend testing of workspace-to-product mapping in bundles API. All 8 test scenarios passed with 100% success rate. Workspace validation, deduplication, and CRUD operations are working correctly.",
   "backend_issues": {
@@ -13,7 +20,7 @@
     "GET /api/bundles/workspaces - Returns 6 valid workspaces correctly",
     "POST /api/bundles - Creates bundles with valid workspace assignments",
     "POST /api/bundles - Validates and filters invalid workspace IDs silently",
-    "POST /api/bundles - Deduplicates workspace IDs correctly", 
+    "POST /api/bundles - Deduplicates workspace IDs correctly",
     "POST /api/bundles - Accepts empty workspaces array",
     "GET /api/bundles - Returns workspaces array in each product",
     "GET /api/bundles/{id} - Returns workspaces array in each product",

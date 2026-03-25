@@ -15,49 +15,53 @@ router = APIRouter(prefix="/history", tags=["History"])
 # =============================================================================
 
 class FuelSurchargeCalculation(BaseModel):
-    """Fuel Surcharge calculation data"""
-    # Core fields
-    base_fuel_price: Optional[float] = None
-    current_fuel_price: Optional[float] = None
-    surcharge_percentage: Optional[float] = None
-    surcharge_amount: Optional[float] = None
-    miles: Optional[float] = None
-    total_surcharge: Optional[float] = None
-    # Flexible additional data
+    """Fuel Surcharge calculation data - 9 fields"""
+    current_fuel_price: Optional[float] = None  # Current diesel $/gal
+    base_fuel_price: Optional[float] = None     # Baseline $/gal
+    base_rate: Optional[float] = None           # Base freight rate $
+    miles: Optional[float] = None               # Trip distance
+    surcharge_method: Optional[str] = None      # "percentage" or "cpm"
+    surcharge_percent: Optional[float] = None   # % increase
+    surcharge_amount: Optional[float] = None    # $ surcharge
+    total_with_surcharge: Optional[float] = None  # Total $
+    cpm_surcharge: Optional[float] = None       # $/mile rate
+    # Flexible additional data for future fields
     additional_data: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
+class IFTAJurisdiction(BaseModel):
+    """IFTA Jurisdiction entry - 7 fields per jurisdiction"""
+    state: Optional[str] = None
+    miles: Optional[float] = None
+    fuel_purchased: Optional[float] = None
+    tax_rate: Optional[float] = None
+    fuel_used: Optional[float] = None
+    net_taxable_fuel: Optional[float] = None
+    tax_due: Optional[float] = None
+
+
 class IFTACalculation(BaseModel):
-    """IFTA (International Fuel Tax Agreement) calculation data"""
-    # Core fields
+    """IFTA (International Fuel Tax Agreement) calculation data - 6 main fields"""
+    mpg: Optional[float] = None                 # Miles per gallon
+    total_fuel_purchased: Optional[float] = None
     total_miles: Optional[float] = None
-    total_gallons: Optional[float] = None
-    mpg: Optional[float] = None
-    jurisdictions: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
-    tax_owed: Optional[Dict[str, float]] = Field(default_factory=dict)
-    quarter: Optional[str] = None
-    year: Optional[int] = None
-    # Flexible additional data
+    total_fuel_used: Optional[float] = None
+    jurisdictions: Optional[List[IFTAJurisdiction]] = Field(default_factory=list)
+    total_tax_due: Optional[float] = None
+    # Flexible additional data for future fields
     additional_data: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
 class BOLData(BaseModel):
-    """Bill of Lading data"""
-    # Core fields
+    """Bill of Lading data - 7 fields"""
     bol_number: Optional[str] = None
+    bol_date: Optional[str] = None              # Date of BOL
     shipper_name: Optional[str] = None
-    shipper_address: Optional[str] = None
     consignee_name: Optional[str] = None
-    consignee_address: Optional[str] = None
     carrier_name: Optional[str] = None
-    pickup_date: Optional[str] = None
-    delivery_date: Optional[str] = None
-    commodity: Optional[str] = None
-    weight: Optional[float] = None
-    pieces: Optional[int] = None
-    freight_charges: Optional[float] = None
-    special_instructions: Optional[str] = None
-    # Flexible additional data
+    total_weight: Optional[float] = None
+    freight_terms: Optional[str] = None         # e.g., "prepaid", "collect"
+    # Flexible additional data for future fields
     additional_data: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 

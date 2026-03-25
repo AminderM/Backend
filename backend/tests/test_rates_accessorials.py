@@ -26,7 +26,7 @@ import uuid
 from datetime import date, timedelta
 
 # API Base URL
-BASE_URL = "https://backend-features-dev.preview.emergentagent.com"
+BASE_URL = "https://backend-feature.preview.emergentagent.com"
 
 # Test credentials
 ADMIN_EMAIL = "aminderpro@gmail.com"

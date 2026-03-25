@@ -42,6 +42,7 @@ from routes import customer_analytics_routes
 from routes import dashboard_routes
 from routes import scheduled_reports
 from routes import carrier_profile_routes
+from routes import history_routes
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -86,6 +87,7 @@ api_router.include_router(customer_analytics_routes.router)
 api_router.include_router(dashboard_routes.router)
 api_router.include_router(scheduled_reports.router)
 api_router.include_router(carrier_profile_routes.router)
+api_router.include_router(history_routes.router)
 
 # WebSocket endpoint for real-time vehicle tracking
 @api_router.websocket("/ws/vehicle/{vehicle_id}")
@@ -134,6 +136,19 @@ app.add_middleware(
 async def root():
     """Health check endpoint"""
     return {"message": "server is running"}
+
+# Health check endpoint under /api
+@api_router.get("/health")
+async def health_check():
+    """
+    Health check endpoint for API.
+    Returns server status and timestamp.
+    """
+    return {
+        "status": "healthy",
+        "message": "API is running",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 # Include the API router in the main app
 app.include_router(api_router)

@@ -52,6 +52,11 @@ async def register_user(user_data: UserCreate, background_tasks: BackgroundTasks
         "status": "email_verification_sent"
     }
 
+@router.post("/signup", response_model=dict)
+async def signup_user(user_data: UserCreate, background_tasks: BackgroundTasks):
+    """Alias for /register — used by the website frontend"""
+    return await register_user(user_data, background_tasks)
+
 @router.post("/login", response_model=dict)
 async def login_user(login_data: UserLogin):
     # Find user

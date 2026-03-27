@@ -41,6 +41,7 @@ from routes import marketing_routes
 from routes import customer_analytics_routes
 from routes import dashboard_routes
 from routes import scheduled_reports
+from routes import history_routes
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -84,6 +85,7 @@ api_router.include_router(marketing_routes.router)
 api_router.include_router(customer_analytics_routes.router)
 api_router.include_router(dashboard_routes.router)
 api_router.include_router(scheduled_reports.router)
+api_router.include_router(history_routes.router)
 
 # WebSocket endpoint for real-time vehicle tracking
 @api_router.websocket("/ws/vehicle/{vehicle_id}")

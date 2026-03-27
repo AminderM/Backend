@@ -303,6 +303,36 @@ async def startup_seed_admin():
         logging.error(f"⚠️ Failed to seed platform admin: {str(e)}")
 
 @app.on_event("startup")
+async def startup_seed_test_user():
+    """Seed test fleet owner user for staging/testing"""
+    try:
+        from models import User, UserRole, RegistrationStatus
+        from auth import hash_password
+        
+        test_email = "testfleetowner@test.com"
+        test_password = "qwerty123"
+        
+        existing = await db.users.find_one({"email": test_email})
+        
+        if not existing:
+            hashed_password = hash_password(test_password)
+            user = User(
+                email=test_email,
+                full_name="Test Fleet Owner",
+                phone="5551234567",
+                role=UserRole.ADMIN,
+                email_verified=True,
+                registration_status=RegistrationStatus.VERIFIED,
+            ).dict()
+            user["password_hash"] = hashed_password
+            await db.users.insert_one(user)
+            logging.info(f"✅ Test user seeded: {test_email}")
+        else:
+            logging.info(f"✅ Test user already exists: {test_email}")
+    except Exception as e:
+        logging.error(f"⚠️ Failed to seed test user: {str(e)}")
+
+@app.on_event("startup")
 async def startup_scheduler():
     """Initialize the scheduled reports scheduler"""
     try:

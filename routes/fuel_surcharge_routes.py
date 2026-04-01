@@ -387,7 +387,7 @@ async def get_fsc_rates():
     """Return both DOE and CTA tables with metadata. No auth required."""
     doe_annotated = [
         {
-            "range":      f"${r['min']:.3f} – {'above' if r['max'] == 9999 else f'${r[\"max\"]:.3f}'}",
+            "range":      f"${r['min']:.3f} – " + ("above" if r['max'] == 9999 else f"${r['max']:.3f}"),
             "cpmDisplay": f"${r['cpm']:.3f}/mi",
             "pctDisplay": f"{r['pct']:.1f}%",
             "cpm": r["cpm"],
@@ -399,7 +399,7 @@ async def get_fsc_rates():
     ]
     cta_annotated = [
         {
-            "range":      f"${r['min']:.3f} – {'above' if r['max'] == 9999 else f'${r[\"max\"]:.3f}'}",
+            "range":      f"${r['min']:.3f} – " + ("above" if r['max'] == 9999 else f"${r['max']:.3f}"),
             "pctDisplay": f"{r['pct']:.1f}%",
             "pct": r["pct"],
             "min": r["min"],

@@ -200,10 +200,32 @@ async def send_verification_email(
         template_body=template_data
     )
 
+async def send_otp_email(
+    background_tasks: BackgroundTasks,
+    email: str,
+    name: str,
+    otp_code: str,
+):
+    """Send 6-digit OTP verification code"""
+    template_data = {
+        "name": name,
+        "otp_code": otp_code,
+        "expiry_minutes": 10
+    }
+
+    email_service.send_in_background(
+        background_tasks,
+        recipients=[email],
+        subject="Your Verification Code - Fleet Marketplace",
+        template_name="otp_email.html",
+        template_body=template_data
+    )
+
+
 async def send_company_verification_email(
     background_tasks: BackgroundTasks,
-    email: str, 
-    name: str, 
+    email: str,
+    name: str,
     company_name: str
 ):
     """Send company verification notification"""

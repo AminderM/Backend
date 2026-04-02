@@ -106,3 +106,69 @@ async def get_user_workspaces_endpoint(current_user: User = Depends(get_current_
         "workspace_details": {ws: workspace_details.get(ws, {}) for ws in workspaces},
         "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
     }
+
+
+# =============================================================================
+# NEW ENDPOINTS: /signup, /user (as per Backend Implementation Guide)
+# =============================================================================
+
+@router.post("/signup", response_model=dict)
+async def signup_user(user_data: UserCreate, background_tasks: BackgroundTasks):
+    """
+    Create a new user account.
+    Alias endpoint for /register - follows the Backend Implementation Guide spec.
+    """
+    # Check if user already exists
+    existing_user = await db.users.find_one({"email": user_data.email})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Generate email verification token
+    token = secrets.token_urlsafe(32)
+    hashed_token = hashlib.sha256(token.encode()).hexdigest()
+    
+    # Hash password
+    hashed_password = hash_password(user_data.password)
+    
+    # Create user
+    user_dict = user_data.dict()
+    user_dict.pop("password")
+    user_dict["password_hash"] = hashed_password
+    user_dict["verification_token"] = hashed_token
+    user_dict["token_expires_at"] = datetime.now(timezone.utc) + timedelta(hours=24)
+    user_dict["email_verified"] = False
+    user_obj = User(**user_dict)
+    
+    # Insert user
+    await db.users.insert_one(user_obj.dict())
+    
+    # Send verification email
+    app_url = os.environ.get('APP_URL', 'http://localhost:3000')
+    verification_url = f"{app_url}/verify-email/{token}"
+    await send_verification_email(
+        background_tasks,
+        user_data.email,
+        user_data.full_name,
+        verification_url
+    )
+    
+    return {
+        "message": "User registered successfully! Please check your email to verify your account.", 
+        "user_id": user_obj.id, 
+        "status": "email_verification_sent"
+    }
+
+
+@router.get("/user", response_model=dict)
+async def get_user_profile(current_user: User = Depends(get_current_user)):
+    """
+    Get current authenticated user's profile.
+    Returns user data along with allowed workspaces.
+    """
+    workspaces = get_workspaces_for_user(current_user)
+    
+    return {
+        "user": current_user.dict(),
+        "allowed_workspaces": workspaces,
+        "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
+    }

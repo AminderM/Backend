@@ -94,14 +94,24 @@ async def save_bol(
 # ── POST /api/history/fuel-surcharge ─────────────────────────────────────────
 
 class FuelSurchargeHistoryRequest(BaseModel):
-    method: str
+    # Frontend snake_case fields
+    current_fuel_price: Optional[float] = None
+    base_fuel_price: Optional[float] = None
+    base_rate: Optional[float] = None
+    miles: Optional[float] = None
+    surcharge_method: Optional[str] = None
+    surcharge_percent: Optional[float] = None
+    surcharge_amount: Optional[float] = None
+    total_with_surcharge: Optional[float] = None
+    cpm_surcharge: Optional[float] = None
+    # Legacy camelCase fields (kept for backward compatibility)
+    method: Optional[str] = None
     fuelPrice: Optional[float] = None
     linehaul: Optional[float] = None
-    miles: Optional[float] = None
-    surcharge: float
-    totalWithLH: float
-    fscPercent: float
-    currency: str = "USD"
+    surcharge: Optional[float] = None
+    totalWithLH: Optional[float] = None
+    fscPercent: Optional[float] = None
+    currency: Optional[str] = "USD"
     description: Optional[str] = None
 
 

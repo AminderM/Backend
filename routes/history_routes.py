@@ -192,6 +192,7 @@ class InvoiceHistoryRequest(BaseModel):
     bill_to_name: Optional[str] = None
     total: Optional[float] = None
     status: Optional[str] = "finalized"
+    invoice_id: Optional[str] = None  # MongoDB _id from POST /api/invoice/generate
 
 
 @router.post("/invoice", response_model=dict, status_code=201)
@@ -205,6 +206,7 @@ async def save_invoice_history(
         "user_id": str(current_user.id),
         "tenant_id": str(getattr(current_user, "tenant_id", "") or ""),
         "data": {
+            "invoice_id": payload.invoice_id,
             "invoice_number": payload.invoice_number,
             "document_type": payload.document_type,
             "vendor_name": payload.vendor_name,

@@ -202,15 +202,43 @@ async def generate_invoice(req: GenerateRequest, current_user=Depends(get_curren
 
 @router.get("/{invoice_id}")
 async def get_invoice(invoice_id: str, current_user=Depends(get_current_user)):
-    """Return a single invoice document. Users can only fetch their own invoices."""
+    """Return a single invoice document. Users can only fetch their own invoices.
+
+    Accepts either:
+    - The invoice document's _id (returned by POST /api/invoice/generate as invoice._id)
+    - A history record's _id (returned by GET /api/history as id) — looks up the
+      linked invoice_id stored in data.invoice_id on that history record
+    """
     try:
         oid = ObjectId(invoice_id)
     except Exception:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
+    # Try direct invoice lookup first
     doc = await db["invoices"].find_one({"_id": oid, "created_by": str(current_user.id)})
+
     if not doc:
-        raise HTTPException(status_code=404, detail="Invoice not found")
+        # Fall back: treat invoice_id as a history record _id and resolve the linked invoice
+        history_rec = await db.history.find_one({
+            "_id": oid,
+            "user_id": str(current_user.id),
+            "type": "invoice",
+        })
+        if not history_rec:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+
+        linked_id = (history_rec.get("data") or {}).get("invoice_id")
+        if not linked_id:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+
+        try:
+            linked_oid = ObjectId(linked_id)
+        except Exception:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+
+        doc = await db["invoices"].find_one({"_id": linked_oid, "created_by": str(current_user.id)})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Invoice not found")
 
     doc["_id"] = str(doc["_id"])
     return {"invoice": doc}

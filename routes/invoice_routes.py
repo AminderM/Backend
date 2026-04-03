@@ -4,6 +4,7 @@ from typing import Optional
 from datetime import datetime, timezone
 from auth import get_current_user
 from database import db
+from bson import ObjectId
 import anthropic
 import logging
 import json
@@ -192,4 +193,24 @@ async def generate_invoice(req: GenerateRequest, current_user=Depends(get_curren
     result = await db["invoices"].insert_one(doc)
     doc["_id"] = str(result.inserted_id)
 
+    return {"invoice": doc}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/invoice/{id}
+# ---------------------------------------------------------------------------
+
+@router.get("/{invoice_id}")
+async def get_invoice(invoice_id: str, current_user=Depends(get_current_user)):
+    """Return a single invoice document. Users can only fetch their own invoices."""
+    try:
+        oid = ObjectId(invoice_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    doc = await db["invoices"].find_one({"_id": oid, "created_by": str(current_user.id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    doc["_id"] = str(doc["_id"])
     return {"invoice": doc}

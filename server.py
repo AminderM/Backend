@@ -43,6 +43,7 @@ from routes import dashboard_routes
 from routes import scheduled_reports
 from routes import history_routes
 from routes import fuel_surcharge_routes
+from routes import invoice_routes
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -88,6 +89,7 @@ api_router.include_router(dashboard_routes.router)
 api_router.include_router(scheduled_reports.router)
 api_router.include_router(history_routes.router)
 api_router.include_router(fuel_surcharge_routes.router)
+api_router.include_router(invoice_routes.router)
 
 # WebSocket endpoint for real-time vehicle tracking
 @api_router.websocket("/ws/vehicle/{vehicle_id}")
@@ -288,6 +290,16 @@ async def startup_seed_admin():
             logging.info(f"✅ Platform admin already exists: {admin_email}")
     except Exception as e:
         logging.error(f"⚠️ Failed to seed platform admin: {str(e)}")
+
+@app.on_event("startup")
+async def startup_invoice_indexes():
+    """Create indexes for the invoices collection"""
+    try:
+        await db["invoices"].create_index([("user_id", 1), ("created_at", -1)])
+        await db["invoices"].create_index("invoice_number")
+        logging.info("✅ Invoice indexes created")
+    except Exception as e:
+        logging.error(f"⚠️ Failed to create invoice indexes: {str(e)}")
 
 @app.on_event("startup")
 async def startup_scheduler():

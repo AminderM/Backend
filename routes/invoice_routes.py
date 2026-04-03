@@ -102,8 +102,6 @@ class GenerateRequest(BaseModel):
     totals: Optional[TotalsInfo] = None
     notes: Optional[str] = None
     paymentTerms: Optional[str] = None
-    logoBase64: Optional[str] = None      # accepted but stripped before DB insert
-    aiSuggestions: Optional[list] = None  # accepted but stripped before DB insert
 
 
 # ---------------------------------------------------------------------------
@@ -184,8 +182,6 @@ async def parse_invoice(req: ParseRequest, current_user=Depends(get_current_user
 async def generate_invoice(req: GenerateRequest, current_user=Depends(get_current_user)):
     """Save a finalized invoice to MongoDB."""
     doc = req.dict()
-    doc.pop("logoBase64", None)
-    doc.pop("aiSuggestions", None)
     doc["invoice_number"] = (req.invoice.number if req.invoice else None)
     doc["status"] = "finalized"
     doc["created_by"] = str(current_user.id)

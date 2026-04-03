@@ -183,6 +183,42 @@ async def get_fuel_surcharge_history(
     }
 
 
+# ── POST /api/history/invoice ────────────────────────────────────────────────
+
+class InvoiceHistoryRequest(BaseModel):
+    invoice_number: Optional[str] = None
+    document_type: Optional[str] = None
+    vendor_name: Optional[str] = None
+    bill_to_name: Optional[str] = None
+    total: Optional[float] = None
+    status: Optional[str] = "finalized"
+
+
+@router.post("/invoice", response_model=dict, status_code=201)
+async def save_invoice_history(
+    payload: InvoiceHistoryRequest,
+    current_user=Depends(get_current_user),
+):
+    """Save a lightweight invoice summary to the shared history collection."""
+    doc = {
+        "type": "invoice",
+        "user_id": str(current_user.id),
+        "tenant_id": str(getattr(current_user, "tenant_id", "") or ""),
+        "data": {
+            "invoice_number": payload.invoice_number,
+            "document_type": payload.document_type,
+            "vendor_name": payload.vendor_name,
+            "bill_to_name": payload.bill_to_name,
+            "total": payload.total,
+            "status": payload.status,
+        },
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    result = await db.history.insert_one(doc)
+    return {"id": str(result.inserted_id), "saved_to_history": True}
+
+
 # ── GET /api/history/ifta ─────────────────────────────────────────────────────
 
 @router.get("/ifta", response_model=dict)

@@ -1,7 +1,7 @@
-from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 from pathlib import Path
 import os
@@ -56,6 +56,15 @@ customer_analytics_routes.set_websocket_manager(manager)
 
 # Create the main app
 app = FastAPI(title="Fleet Marketplace API")
+
+# Global exception handler — ensures all errors return JSON, never HTML
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logging.error(f"Unhandled exception on {request.method} {request.url}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error", "detail": str(exc)},
+    )
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")

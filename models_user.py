@@ -280,7 +280,17 @@ class User(UserBase):
     registration_status: RegistrationStatus = RegistrationStatus.PENDING
     verification_token: Optional[str] = None
     token_expires_at: Optional[datetime] = None
-    
+
+    # Social / OAuth providers
+    auth_provider: str = "email"        # "email" | "google" | "apple"
+    google_id: Optional[str] = None
+    apple_id: Optional[str] = None
+
+    # Email OTP
+    otp_code: Optional[str] = None      # SHA-256 hashed 6-digit code
+    otp_expires_at: Optional[datetime] = None
+    otp_attempts: int = 0
+
     # Multi-Tenancy
     tenant_id: Optional[str] = None          # FK to companies/tenants
     fleet_owner_id: Optional[str] = None     # Legacy - for backward compatibility

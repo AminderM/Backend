@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timezone
-from auth import get_current_user
+from auth import require_web_user
 from database import db
 import logging
 
@@ -227,7 +227,7 @@ class FuelSurchargeRequest(BaseModel):
 @router.post("/calculate", response_model=dict)
 async def calculate_fuel_surcharge(
     data: FuelSurchargeRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_web_user),
 ):
     method = data.method.lower()
     fuel_price = data.fuelPrice

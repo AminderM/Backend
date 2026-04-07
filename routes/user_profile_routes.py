@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone
-from auth import get_current_user, verify_password, hash_password
+from auth import verify_password, hash_password, require_web_user
 from database import db
 import logging
 
@@ -30,7 +31,7 @@ class PasswordUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.get("/profile")
-async def get_profile(current_user=Depends(get_current_user)):
+async def get_profile(current_user=Depends(require_web_user)):
     """Return the authenticated user's profile."""
     return {
         "full_name": getattr(current_user, "full_name", None),
@@ -51,7 +52,7 @@ async def get_profile(current_user=Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 
 @router.put("/profile")
-async def update_profile(body: ProfileUpdate, current_user=Depends(get_current_user)):
+async def update_profile(body: ProfileUpdate, current_user=Depends(require_web_user)):
     """Update full_name and/or phone for the authenticated user."""
     updates: dict = {"updated_at": datetime.now(timezone.utc).isoformat()}
 
@@ -75,7 +76,7 @@ async def update_profile(body: ProfileUpdate, current_user=Depends(get_current_u
 # ---------------------------------------------------------------------------
 
 @router.get("/subscription")
-async def get_subscription(current_user=Depends(get_current_user)):
+async def get_subscription(current_user=Depends(require_web_user)):
     """Return the subscription details for the authenticated user's company."""
     tenant_id = getattr(current_user, "tenant_id", None)
 
@@ -112,24 +113,24 @@ async def get_subscription(current_user=Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 
 @router.put("/password")
-async def update_password(body: PasswordUpdate, current_user=Depends(get_current_user)):
+async def update_password(body: PasswordUpdate, current_user=Depends(require_web_user)):
     """Change password. Returns 400 if current password is wrong."""
     # OAuth users don't have a password
     if getattr(current_user, "auth_provider", "email") != "email":
-        raise HTTPException(
+        return JSONResponse(
             status_code=400,
-            detail="Password cannot be changed for accounts using Google or Apple sign-in.",
+            content={"error": "Password cannot be changed for Google/Apple accounts"},
         )
 
     stored_hash = getattr(current_user, "password_hash", None)
     if not stored_hash:
-        raise HTTPException(status_code=400, detail="No password set on this account.")
+        return JSONResponse(status_code=400, content={"error": "No password set on this account"})
 
     if not verify_password(body.current_password, stored_hash):
-        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+        return JSONResponse(status_code=400, content={"error": "Current password is incorrect"})
 
     if len(body.new_password) < 8:
-        raise HTTPException(status_code=400, detail="New password must be at least 8 characters.")
+        return JSONResponse(status_code=400, content={"error": "New password must be at least 8 characters"})
 
     new_hash = hash_password(body.new_password)
     await db.users.update_one(
@@ -145,7 +146,7 @@ async def update_password(body: PasswordUpdate, current_user=Depends(get_current
 # ---------------------------------------------------------------------------
 
 @router.delete("/account")
-async def delete_account(current_user=Depends(get_current_user)):
+async def delete_account(current_user=Depends(require_web_user)):
     """Permanently delete the authenticated user and all their associated data."""
     user_id = str(current_user.id)
 

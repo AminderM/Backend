@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import Response
-from auth import get_current_user
+from auth import require_web_user
 import tempfile
 import os
 import re
@@ -45,7 +45,7 @@ def _check_libreoffice():
 @router.post("/pdf-to-word")
 async def pdf_to_word(
     file: UploadFile = File(...),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_web_user),
 ):
     """Convert an uploaded PDF to a .docx file and return the binary."""
     if not file:
@@ -99,7 +99,7 @@ async def pdf_to_word(
 @router.post("/word-to-pdf")
 async def word_to_pdf(
     file: UploadFile = File(...),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_web_user),
 ):
     """Convert an uploaded .docx/.doc file to PDF and return the binary."""
     _check_libreoffice()

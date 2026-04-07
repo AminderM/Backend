@@ -83,6 +83,7 @@ def _generate_otp() -> tuple[str, str]:
 
 @router.post("/register", response_model=dict)
 async def register_user(user_data: UserCreate, background_tasks: BackgroundTasks):
+    """TMS/admin user registration — invitation only. Not for public website signup."""
     # Check if user already exists
     existing_user = await db.users.find_one({"email": user_data.email})
     if existing_user:
@@ -120,6 +121,72 @@ async def register_user(user_data: UserCreate, background_tasks: BackgroundTasks
 async def signup_user(user_data: UserCreate, background_tasks: BackgroundTasks):
     """Alias for /register — used by the website frontend"""
     return await register_user(user_data, background_tasks)
+
+
+# ---------------------------------------------------------------------------
+# Website web tools signup / login
+# ---------------------------------------------------------------------------
+
+@router.post("/web/signup", response_model=dict)
+async def web_signup(user_data: UserCreate, background_tasks: BackgroundTasks):
+    """
+    Register a new website web tools user from integratedtech.ca/signup.
+    Creates a web_tools_user role with portal='website'.
+    Separate from TMS users — no tenant/company required at signup.
+    """
+    existing = await db.users.find_one({"email": user_data.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    raw_otp, hashed_otp = _generate_otp()
+    hashed_password = hash_password(user_data.password)
+
+    user_dict = user_data.dict()
+    user_dict.pop("password")
+    user_dict["password_hash"] = hashed_password
+    user_dict["auth_provider"] = "email"
+    user_dict["email_verified"] = False
+    user_dict["otp_code"] = hashed_otp
+    user_dict["otp_expires_at"] = datetime.now(timezone.utc) + timedelta(minutes=10)
+    user_dict["otp_attempts"] = 0
+    user_dict["role"] = UserRole.WEB_TOOLS_USER
+    user_dict["portal"] = "website"
+    user_dict["tenant_id"] = None
+
+    user_obj = User(**user_dict)
+    await db.users.insert_one(user_obj.dict())
+    await send_otp_email(background_tasks, user_data.email, user_data.full_name, raw_otp)
+
+    return {
+        "message": "Registration successful! Check your email for a 6-digit verification code.",
+        "user_id": user_obj.id,
+        "status": "otp_sent",
+    }
+
+
+@router.post("/web/login", response_model=dict)
+async def web_login(login_data: UserLogin):
+    """
+    Login for website web tools users only.
+    Rejects TMS/admin users — they must use /api/auth/login.
+    """
+    user = await db.users.find_one({"email": login_data.email})
+
+    if not user or not user.get("password_hash") or not verify_password(login_data.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if not user.get("email_verified"):
+        raise HTTPException(status_code=403, detail="Please verify your email before logging in.")
+
+    # Block TMS/admin users from using the website login
+    if user.get("portal", "tms") != "website" or user.get("role") != "web_tools_user":
+        raise HTTPException(
+            status_code=403,
+            detail="This login is for website users only. Please use your TMS portal to log in.",
+        )
+
+    user_obj = User(**user)
+    return _build_login_response(user_obj)
 
 
 @router.post("/login", response_model=dict)
@@ -251,33 +318,79 @@ async def send_otp(data: SendOTPRequest, background_tasks: BackgroundTasks):
 
 
 # ---------------------------------------------------------------------------
-# Google OAuth
+# Google OAuth — TMS portal (invitation-based, no new account creation)
 # ---------------------------------------------------------------------------
 
-@router.post("/google", response_model=dict)
-async def google_login(data: GoogleAuthRequest):
-    """Verify a Google ID token and return a Fleet Marketplace JWT."""
+async def _verify_google_token(id_token_str: str) -> dict:
+    """Verify Google ID token and return idinfo. Raises HTTPException on failure."""
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Google authentication is not configured.")
-
     try:
-        idinfo = google_id_token.verify_oauth2_token(
-            data.id_token, google_requests.Request(), GOOGLE_CLIENT_ID
+        return google_id_token.verify_oauth2_token(
+            id_token_str, google_requests.Request(), GOOGLE_CLIENT_ID
         )
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=f"Invalid Google token: {exc}")
 
+
+@router.post("/google", response_model=dict)
+async def google_login(data: GoogleAuthRequest):
+    """Google sign-in for TMS/admin users only. Account must already exist (invitation-only)."""
+    idinfo = await _verify_google_token(data.id_token)
     google_sub = idinfo["sub"]
     email = idinfo.get("email", "")
-    full_name = idinfo.get("name", email.split("@")[0])
 
-    # Look up by google_id first, then by email (user may have registered with email before)
     user = await db.users.find_one({"google_id": google_sub})
     if not user and email:
         user = await db.users.find_one({"email": email})
 
+    if not user:
+        raise HTTPException(
+            status_code=403,
+            detail="No TMS account found. TMS access is by invitation only.",
+        )
+
+    # Block website users from using TMS Google login
+    if user.get("portal", "tms") == "website" or user.get("role") == "web_tools_user":
+        raise HTTPException(
+            status_code=403,
+            detail="Please use the website login page for your account.",
+        )
+
+    if not user.get("google_id"):
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"google_id": google_sub, "auth_provider": "google"}},
+        )
+        user["google_id"] = google_sub
+        user["auth_provider"] = "google"
+
+    return _build_login_response(User(**user))
+
+
+# ---------------------------------------------------------------------------
+# Google OAuth — Website portal (self-serve, creates web_tools_user on first login)
+# ---------------------------------------------------------------------------
+
+@router.post("/web/google", response_model=dict)
+async def web_google_login(data: GoogleAuthRequest):
+    """Google sign-in for website web tools users. Creates account on first login."""
+    idinfo = await _verify_google_token(data.id_token)
+    google_sub = idinfo["sub"]
+    email = idinfo.get("email", "")
+    full_name = idinfo.get("name", email.split("@")[0])
+
+    user = await db.users.find_one({"google_id": google_sub})
+    if not user and email:
+        user = await db.users.find_one({"email": email, "portal": "website"})
+
     if user:
-        # Link google_id if this is the first Google login for an existing email account
+        # Block TMS users from using website Google login
+        if user.get("portal", "tms") != "website":
+            raise HTTPException(
+                status_code=403,
+                detail="This Google account is linked to a TMS account. Please use your TMS portal.",
+            )
         if not user.get("google_id"):
             await db.users.update_one(
                 {"_id": user["_id"]},
@@ -287,7 +400,7 @@ async def google_login(data: GoogleAuthRequest):
             user["auth_provider"] = "google"
         user_obj = User(**user)
     else:
-        # Create new account
+        # Create new website web tools account
         new_user = User(
             email=email,
             full_name=full_name,
@@ -296,7 +409,8 @@ async def google_login(data: GoogleAuthRequest):
             google_id=google_sub,
             email_verified=True,
             registration_status=RegistrationStatus.VERIFIED,
-            role=UserRole.VIEWER,
+            role=UserRole.WEB_TOOLS_USER,
+            portal="website",
         )
         await db.users.insert_one(new_user.dict())
         user_obj = new_user
@@ -305,18 +419,16 @@ async def google_login(data: GoogleAuthRequest):
 
 
 # ---------------------------------------------------------------------------
-# Apple Sign-In
+# Apple Sign-In — shared token verification helper
 # ---------------------------------------------------------------------------
 
-@router.post("/apple", response_model=dict)
-async def apple_login(data: AppleAuthRequest):
-    """Verify an Apple ID token and return a Fleet Marketplace JWT."""
+async def _verify_apple_token(id_token_str: str) -> dict:
+    """Verify Apple ID token and return payload. Raises HTTPException on failure."""
     if not APPLE_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Apple authentication is not configured.")
 
-    # Decode header to get key ID
     try:
-        header = pyjwt.get_unverified_header(data.id_token)
+        header = pyjwt.get_unverified_header(id_token_str)
     except pyjwt.exceptions.DecodeError as exc:
         raise HTTPException(status_code=401, detail=f"Invalid Apple token: {exc}")
 
@@ -329,15 +441,14 @@ async def apple_login(data: AppleAuthRequest):
         jwks = await _get_apple_jwks()
         matching_key = await _find_key(jwks)
         if not matching_key:
-            # Key may have rotated — refresh cache and retry once
             jwks = await _get_apple_jwks(force_refresh=True)
             matching_key = await _find_key(jwks)
         if not matching_key:
             raise HTTPException(status_code=401, detail="Apple public key not found.")
 
         public_key = RSAAlgorithm.from_jwk(json.dumps(matching_key))
-        payload = pyjwt.decode(
-            data.id_token,
+        return pyjwt.decode(
+            id_token_str,
             public_key,
             algorithms=["RS256"],
             audience=APPLE_CLIENT_ID,
@@ -348,16 +459,69 @@ async def apple_login(data: AppleAuthRequest):
     except pyjwt.exceptions.InvalidTokenError as exc:
         raise HTTPException(status_code=401, detail=f"Invalid Apple token: {exc}")
 
+
+# ---------------------------------------------------------------------------
+# Apple Sign-In — TMS portal (invitation-based, no new account creation)
+# ---------------------------------------------------------------------------
+
+@router.post("/apple", response_model=dict)
+async def apple_login(data: AppleAuthRequest):
+    """Apple sign-in for TMS/admin users only. Account must already exist (invitation-only)."""
+    payload = await _verify_apple_token(data.id_token)
     apple_sub = payload["sub"]
     email = payload.get("email")
-    full_name = data.full_name or (email.split("@")[0] if email else "Apple User")
 
-    # Look up by apple_id first, then by email
     user = await db.users.find_one({"apple_id": apple_sub})
     if not user and email:
         user = await db.users.find_one({"email": email})
 
+    if not user:
+        raise HTTPException(
+            status_code=403,
+            detail="No TMS account found. TMS access is by invitation only.",
+        )
+
+    # Block website users from using TMS Apple login
+    if user.get("portal", "tms") == "website" or user.get("role") == "web_tools_user":
+        raise HTTPException(
+            status_code=403,
+            detail="Please use the website login page for your account.",
+        )
+
+    if not user.get("apple_id"):
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"apple_id": apple_sub, "auth_provider": "apple"}},
+        )
+        user["apple_id"] = apple_sub
+        user["auth_provider"] = "apple"
+
+    return _build_login_response(User(**user))
+
+
+# ---------------------------------------------------------------------------
+# Apple Sign-In — Website portal (self-serve, creates web_tools_user on first login)
+# ---------------------------------------------------------------------------
+
+@router.post("/web/apple", response_model=dict)
+async def web_apple_login(data: AppleAuthRequest):
+    """Apple sign-in for website web tools users. Creates account on first login."""
+    payload = await _verify_apple_token(data.id_token)
+    apple_sub = payload["sub"]
+    email = payload.get("email")
+    full_name = data.full_name or (email.split("@")[0] if email else "Apple User")
+
+    user = await db.users.find_one({"apple_id": apple_sub})
+    if not user and email:
+        user = await db.users.find_one({"email": email, "portal": "website"})
+
     if user:
+        # Block TMS users from using website Apple login
+        if user.get("portal", "tms") != "website":
+            raise HTTPException(
+                status_code=403,
+                detail="This Apple account is linked to a TMS account. Please use your TMS portal.",
+            )
         if not user.get("apple_id"):
             await db.users.update_one(
                 {"_id": user["_id"]},
@@ -380,7 +544,8 @@ async def apple_login(data: AppleAuthRequest):
             apple_id=apple_sub,
             email_verified=True,
             registration_status=RegistrationStatus.VERIFIED,
-            role=UserRole.VIEWER,
+            role=UserRole.WEB_TOOLS_USER,
+            portal="website",
         )
         await db.users.insert_one(new_user.dict())
         user_obj = new_user

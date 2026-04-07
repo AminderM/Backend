@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from datetime import datetime, timezone
 from typing import Optional, List, Any
 from database import db
-from auth import get_current_user
+from auth import require_web_user
 from bson import ObjectId
 import logging
 
@@ -43,7 +43,7 @@ async def get_history(
     type: Optional[str] = Query(None, description="Filter by type: bol, fuel-surcharge, ifta"),
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_web_user),
 ):
     """
     Return paginated activity history for the current user.
@@ -70,7 +70,7 @@ async def get_history(
 @router.post("/bol", response_model=dict, status_code=201)
 async def save_bol(
     payload: BOLRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_web_user),
 ):
     """
     Save a generated Bill of Lading to the user's history.
@@ -132,7 +132,7 @@ async def _is_paid(current_user) -> bool:
 @router.post("/fuel-surcharge", response_model=dict, status_code=201)
 async def save_fuel_surcharge(
     payload: FuelSurchargeHistoryRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_web_user),
 ):
     """
     Manually save a fuel surcharge calculation to history.
@@ -164,7 +164,7 @@ async def save_fuel_surcharge(
 async def get_fuel_surcharge_history(
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_web_user),
 ):
     """
     Return the current user's fuel-surcharge calculation history.
@@ -198,7 +198,7 @@ class InvoiceHistoryRequest(BaseModel):
 @router.post("/invoice", response_model=dict, status_code=201)
 async def save_invoice_history(
     payload: InvoiceHistoryRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_web_user),
 ):
     """Save a lightweight invoice summary to the shared history collection."""
     doc = {
@@ -227,7 +227,7 @@ async def save_invoice_history(
 async def get_ifta_history(
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_web_user),
 ):
     """
     Return the current user's IFTA calculation history.

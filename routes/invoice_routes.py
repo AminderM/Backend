@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone
-from auth import get_current_user
+from auth import require_web_user
 from database import db
 from bson import ObjectId
 import anthropic
@@ -110,7 +110,7 @@ class GenerateRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/parse")
-async def parse_invoice(req: ParseRequest, current_user=Depends(get_current_user)):
+async def parse_invoice(req: ParseRequest, current_user=Depends(require_web_user)):
     """Accept a base64-encoded PDF/image or raw text, extract invoice fields via Claude."""
     if not req.file and not req.text:
         raise HTTPException(status_code=400, detail="Provide either 'file' (base64) or 'text'")
@@ -180,7 +180,7 @@ async def parse_invoice(req: ParseRequest, current_user=Depends(get_current_user
 # ---------------------------------------------------------------------------
 
 @router.post("/generate")
-async def generate_invoice(req: GenerateRequest, current_user=Depends(get_current_user)):
+async def generate_invoice(req: GenerateRequest, current_user=Depends(require_web_user)):
     """Save a finalized invoice to MongoDB."""
     doc = req.dict()
     doc["invoice_number"] = (req.invoice.number if req.invoice else None)
@@ -201,7 +201,7 @@ async def generate_invoice(req: GenerateRequest, current_user=Depends(get_curren
 # ---------------------------------------------------------------------------
 
 @router.get("/{invoice_id}")
-async def get_invoice(invoice_id: str, current_user=Depends(get_current_user)):
+async def get_invoice(invoice_id: str, current_user=Depends(require_web_user)):
     """Return a single invoice document. Users can only fetch their own invoices.
 
     Accepts either:

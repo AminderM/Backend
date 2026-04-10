@@ -83,3 +83,4 @@ logs/
 # Environment files
 *.env
 *.env.*
+client_secret*.json

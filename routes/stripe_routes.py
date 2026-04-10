@@ -176,10 +176,10 @@ async def _get_user_by_stripe_customer(stripe_customer_id: str):
     return await db.users.find_one({"stripe_customer_id": stripe_customer_id})
 
 
-async def _handle_checkout_completed(session: dict):
+async def _handle_checkout_completed(session):
     """Upgrade user tier after successful checkout."""
-    stripe_customer_id = session.get("customer")
-    subscription_id = session.get("subscription")
+    stripe_customer_id = getattr(session, "customer", None) or session.get("customer") if hasattr(session, "get") else None
+    subscription_id = getattr(session, "subscription", None) or (session.get("subscription") if hasattr(session, "get") else None)
 
     if not stripe_customer_id or not subscription_id:
         return
@@ -191,16 +191,17 @@ async def _handle_checkout_completed(session: dict):
         logger.error(f"Could not retrieve subscription {subscription_id}: {e}")
         return
 
-    price_id = subscription["items"]["data"][0]["price"]["id"]
+    price_id = subscription.items.data[0].price.id
     plan_info = _price_to_plan(price_id)
     renewal_date = datetime.fromtimestamp(
-        subscription["current_period_end"], tz=timezone.utc
+        subscription.current_period_end, tz=timezone.utc
     ).isoformat()
 
     user = await _get_user_by_stripe_customer(stripe_customer_id)
     if not user:
         # Try fallback via session metadata
-        user_id = (session.get("metadata") or {}).get("user_id")
+        metadata = getattr(session, "metadata", None) or {}
+        user_id = metadata.get("user_id") if hasattr(metadata, "get") else getattr(metadata, "user_id", None)
         if user_id:
             user = await db.users.find_one({"id": user_id})
 
@@ -220,13 +221,13 @@ async def _handle_checkout_completed(session: dict):
     logger.info(f"User {user.get('email')} upgraded to {plan_info['tier']} ({plan_info['billing_cycle']})")
 
 
-async def _handle_subscription_updated(subscription: dict):
+async def _handle_subscription_updated(subscription):
     """Sync tier when plan changes (e.g. upgrade, downgrade, renewal)."""
-    stripe_customer_id = subscription.get("customer")
-    price_id = subscription["items"]["data"][0]["price"]["id"]
+    stripe_customer_id = getattr(subscription, "customer", None)
+    price_id = subscription.items.data[0].price.id
     plan_info = _price_to_plan(price_id)
     renewal_date = datetime.fromtimestamp(
-        subscription["current_period_end"], tz=timezone.utc
+        subscription.current_period_end, tz=timezone.utc
     ).isoformat()
 
     user = await _get_user_by_stripe_customer(stripe_customer_id)
@@ -236,7 +237,7 @@ async def _handle_subscription_updated(subscription: dict):
     await db.users.update_one(
         {"_id": user["_id"]},
         {"$set": {
-            "stripe_subscription_id": subscription["id"],
+            "stripe_subscription_id": subscription.id,
             "tier": plan_info["tier"],
             "billing_cycle": plan_info["billing_cycle"],
             "renewal_date": renewal_date,
@@ -245,9 +246,9 @@ async def _handle_subscription_updated(subscription: dict):
     logger.info(f"User {user.get('email')} subscription updated to {plan_info['tier']}")
 
 
-async def _handle_subscription_deleted(subscription: dict):
+async def _handle_subscription_deleted(subscription):
     """Downgrade user to free when subscription is cancelled."""
-    stripe_customer_id = subscription.get("customer")
+    stripe_customer_id = getattr(subscription, "customer", None)
     user = await _get_user_by_stripe_customer(stripe_customer_id)
     if not user:
         return
@@ -264,9 +265,10 @@ async def _handle_subscription_deleted(subscription: dict):
     logger.info(f"User {user.get('email')} downgraded to free (subscription cancelled)")
 
 
-async def _handle_payment_failed(invoice: dict):
+async def _handle_payment_failed(invoice):
     """Log payment failures — optionally notify user."""
-    stripe_customer_id = invoice.get("customer")
+    stripe_customer_id = getattr(invoice, "customer", None)
     user = await _get_user_by_stripe_customer(stripe_customer_id)
     if user:
-        logger.warning(f"Payment failed for user {user.get('email')} — invoice {invoice.get('id')}")
+        invoice_id = getattr(invoice, "id", None)
+        logger.warning(f"Payment failed for user {user.get('email')} — invoice {invoice_id}")

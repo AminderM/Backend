@@ -179,7 +179,10 @@ async def web_login(login_data: UserLogin):
         raise HTTPException(status_code=403, detail="Please verify your email before logging in.")
 
     # Block TMS/admin users from using the website login
-    if user.get("portal", "tms") != "website" or user.get("role") != "web_tools_user":
+    # Exception: platform_admin can log in from anywhere for testing/management
+    is_web_user = user.get("portal") == "website" and user.get("role") == "web_tools_user"
+    is_platform_admin = user.get("role") == "platform_admin"
+    if not is_web_user and not is_platform_admin:
         raise HTTPException(
             status_code=403,
             detail="This login is for website users only. Please use your TMS portal to log in.",

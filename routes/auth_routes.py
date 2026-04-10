@@ -14,7 +14,7 @@ import jwt as pyjwt
 from jwt.algorithms import RSAAlgorithm
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
-from email_service import send_otp_email
+from email_service import send_otp_email, send_password_reset_email
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -190,6 +190,94 @@ async def web_login(login_data: UserLogin):
 
     user_obj = User(**user)
     return _build_login_response(user_obj)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/auth/web/forgot-password
+# ---------------------------------------------------------------------------
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+@router.post("/web/forgot-password")
+async def web_forgot_password(body: ForgotPasswordRequest, background_tasks: BackgroundTasks):
+    """
+    Send a password reset OTP to the user's email.
+    Always returns 200 to avoid leaking whether the email exists.
+    """
+    user = await db.users.find_one({"email": body.email})
+    if user:
+        is_web_user = user.get("portal") == "website" and user.get("role") == "web_tools_user"
+        is_platform_admin = user.get("role") == "platform_admin"
+        if is_web_user or is_platform_admin:
+            raw_otp, hashed_otp = _generate_otp()
+            await db.users.update_one(
+                {"_id": user["_id"]},
+                {"$set": {
+                    "reset_otp_code": hashed_otp,
+                    "reset_otp_expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
+                    "reset_otp_attempts": 0,
+                }},
+            )
+            await send_password_reset_email(
+                background_tasks, body.email, user.get("full_name", "User"), raw_otp
+            )
+    return {"message": "If that email is registered, a reset code has been sent."}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/auth/web/reset-password
+# ---------------------------------------------------------------------------
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    otp_code: str
+    new_password: str
+
+@router.post("/web/reset-password")
+async def web_reset_password(body: ResetPasswordRequest):
+    """
+    Verify the OTP and set a new password.
+    """
+    user = await db.users.find_one({"email": body.email})
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code.")
+
+    # Check attempts
+    if user.get("reset_otp_attempts", 0) >= 5:
+        raise HTTPException(status_code=429, detail="Too many attempts. Please request a new code.")
+
+    # Check expiry
+    expires_at = user.get("reset_otp_expires_at")
+    if not expires_at or datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Reset code has expired. Please request a new one.")
+
+    # Verify OTP
+    hashed_input = hashlib.sha256(body.otp_code.encode()).hexdigest()
+    if hashed_input != user.get("reset_otp_code"):
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$inc": {"reset_otp_attempts": 1}},
+        )
+        raise HTTPException(status_code=400, detail="Invalid reset code.")
+
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+
+    # Update password and clear reset fields
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {
+            "password_hash": hash_password(body.new_password),
+            "email_verified": True,
+        },
+        "$unset": {
+            "reset_otp_code": "",
+            "reset_otp_expires_at": "",
+            "reset_otp_attempts": "",
+        }},
+    )
+    return {"message": "Password updated successfully. You can now log in."}
 
 
 @router.post("/login", response_model=dict)

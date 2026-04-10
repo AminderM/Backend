@@ -94,7 +94,7 @@ async def create_checkout_session(request: Request, current_user=Depends(require
             cancel_url=f"{FRONTEND_URL}/pricing",
             metadata={"user_id": user_id},
         )
-    except stripe.error.StripeError as e:
+    except stripe.StripeError as e:
         logger.error(f"Stripe checkout session error for user {user_id}: {e}")
         raise HTTPException(status_code=502, detail=f"Stripe error: {str(e)}")
 
@@ -123,7 +123,7 @@ async def billing_portal(current_user=Depends(require_web_user)):
             customer=stripe_customer_id,
             return_url=f"{FRONTEND_URL}/account/subscription",
         )
-    except stripe.error.StripeError as e:
+    except stripe.StripeError as e:
         logger.error(f"Stripe portal error for user {current_user.id}: {e}")
         raise HTTPException(status_code=502, detail=f"Stripe error: {str(e)}")
 
@@ -145,7 +145,7 @@ async def stripe_webhook(request: Request):
 
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, WEBHOOK_SECRET)
-    except stripe.error.SignatureVerificationError:
+    except stripe.SignatureVerificationError:
         logger.warning("Stripe webhook signature verification failed")
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
@@ -187,7 +187,7 @@ async def _handle_checkout_completed(session: dict):
     # Retrieve the subscription to get the price ID
     try:
         subscription = stripe.Subscription.retrieve(subscription_id)
-    except stripe.error.StripeError as e:
+    except stripe.StripeError as e:
         logger.error(f"Could not retrieve subscription {subscription_id}: {e}")
         return
 

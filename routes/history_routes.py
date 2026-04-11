@@ -30,9 +30,51 @@ class BOLRequest(BaseModel):
     reference_number: Optional[str] = None
 
 
+TYPE_LABELS = {
+    "bol": "Bill of Lading",
+    "fuel-surcharge": "Fuel Surcharge",
+    "ifta": "IFTA Calculation",
+    "invoice": "Invoice",
+    "pdf-to-word": "PDF to Word",
+    "word-to-pdf": "Word to PDF",
+    "e-signature": "E-Signature",
+}
+
+
+def _build_title(doc: dict) -> str:
+    """Build a human-readable title from a history record."""
+    t = doc.get("type", "")
+    data = doc.get("data") or {}
+
+    if t == "bol":
+        shipper = data.get("shipper_name", "")
+        consignee = data.get("consignee_name", "")
+        pro = data.get("pro_number", "")
+        parts = [f"BOL #{pro}" if pro else "BOL", f"{shipper} to {consignee}" if shipper and consignee else ""]
+        return " — ".join(p for p in parts if p)
+
+    if t == "invoice":
+        num = data.get("invoice_number", "")
+        vendor = data.get("vendor_name", "") or data.get("bill_to_name", "")
+        parts = [f"Invoice #{num}" if num else "Invoice", vendor]
+        return " — ".join(p for p in parts if p)
+
+    if t == "fuel-surcharge":
+        desc = data.get("description", "")
+        return f"Fuel Surcharge — {desc}" if desc else "Fuel Surcharge Calculation"
+
+    if t == "ifta":
+        quarter = data.get("quarter", "") or data.get("period", "")
+        return f"IFTA — {quarter}" if quarter else "IFTA Calculation"
+
+    return TYPE_LABELS.get(t, t.replace("-", " ").title())
+
+
 def _str_id(doc: dict) -> dict:
-    """Convert MongoDB _id to string id."""
+    """Convert MongoDB _id to string id and add title/download_url."""
     doc["id"] = str(doc.pop("_id"))
+    doc["title"] = _build_title(doc)
+    doc.setdefault("download_url", None)
     return doc
 
 

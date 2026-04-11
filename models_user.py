@@ -314,6 +314,13 @@ class User(UserBase):
     operating_provinces: List[str] = []      # Provinces where user operates
     primary_province: Optional[str] = None   # Main province of operation
     
+    # Stripe / Subscription (website web tools users)
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
+    tier: str = "free"                   # "free" | "pro" | "enterprise"
+    billing_cycle: Optional[str] = None  # "monthly" | "annual"
+    renewal_date: Optional[str] = None   # ISO timestamp
+
     # Status
     status: UserStatus = UserStatus.ACTIVE
     is_active: bool = True

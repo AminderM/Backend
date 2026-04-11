@@ -178,10 +178,12 @@ async def _get_user_by_stripe_customer(stripe_customer_id: str):
 
 async def _handle_checkout_completed(session):
     """Upgrade user tier after successful checkout."""
-    stripe_customer_id = getattr(session, "customer", None) or session.get("customer") if hasattr(session, "get") else None
-    subscription_id = getattr(session, "subscription", None) or (session.get("subscription") if hasattr(session, "get") else None)
+    stripe_customer_id = getattr(session, "customer", None)
+    subscription_id = getattr(session, "subscription", None)
 
+    logger.info(f"Checkout completed: customer={stripe_customer_id} subscription={subscription_id}")
     if not stripe_customer_id or not subscription_id:
+        logger.warning("Missing customer or subscription ID in checkout event")
         return
 
     # Retrieve the subscription to get the price ID
@@ -198,10 +200,12 @@ async def _handle_checkout_completed(session):
     ).isoformat()
 
     user = await _get_user_by_stripe_customer(stripe_customer_id)
+    logger.info(f"User lookup by stripe_customer_id={stripe_customer_id}: {'found' if user else 'not found'}")
     if not user:
         # Try fallback via session metadata
         metadata = getattr(session, "metadata", None) or {}
         user_id = metadata.get("user_id") if hasattr(metadata, "get") else getattr(metadata, "user_id", None)
+        logger.info(f"Fallback lookup by user_id={user_id}")
         if user_id:
             user = await db.users.find_one({"id": user_id})
 

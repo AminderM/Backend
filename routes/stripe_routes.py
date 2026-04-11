@@ -195,9 +195,8 @@ async def _handle_checkout_completed(session):
 
     price_id = subscription.items.data[0].price.id
     plan_info = _price_to_plan(price_id)
-    renewal_date = datetime.fromtimestamp(
-        subscription.current_period_end, tz=timezone.utc
-    ).isoformat()
+    period_end = getattr(subscription, "current_period_end", None)
+    renewal_date = datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat() if period_end else None
 
     user = await _get_user_by_stripe_customer(stripe_customer_id)
     logger.info(f"User lookup by stripe_customer_id={stripe_customer_id}: {'found' if user else 'not found'}")
@@ -230,9 +229,8 @@ async def _handle_subscription_updated(subscription):
     stripe_customer_id = getattr(subscription, "customer", None)
     price_id = subscription.items.data[0].price.id
     plan_info = _price_to_plan(price_id)
-    renewal_date = datetime.fromtimestamp(
-        subscription.current_period_end, tz=timezone.utc
-    ).isoformat()
+    period_end = getattr(subscription, "current_period_end", None)
+    renewal_date = datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat() if period_end else None
 
     user = await _get_user_by_stripe_customer(stripe_customer_id)
     if not user:

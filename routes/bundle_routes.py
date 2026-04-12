@@ -14,12 +14,23 @@ import uuid
 
 router = APIRouter(prefix="/bundles", tags=["Product Bundles"])
 
+# Valid workspace IDs
+VALID_WORKSPACES = [
+    "dispatch_operations",
+    "accounting", 
+    "sales_business_dev",
+    "hr",
+    "fleet_maintenance",
+    "fleet_safety"
+]
+
 # Pydantic Models
 class ProductInBundle(BaseModel):
     product_id: str
     product_name: Optional[str] = None
     included_seats: int = 5
     included_storage_gb: int = 10
+    workspaces: Optional[List[str]] = []  # List of workspace IDs
 
 class BundleCreate(BaseModel):
     name: str
@@ -53,6 +64,15 @@ def require_admin(current_user: User):
     if current_user.role not in ["platform_admin", "company_admin"]:
         raise HTTPException(status_code=403, detail="Admin access required")
 
+def validate_workspaces(workspaces: Optional[List[str]]) -> List[str]:
+    """Validate and deduplicate workspace IDs"""
+    if not workspaces:
+        return []
+    
+    # Filter to only valid workspace IDs and deduplicate
+    valid = list(set([w for w in workspaces if w in VALID_WORKSPACES]))
+    return valid
+
 # Get all available products (from PLANS)
 @router.get('/products')
 async def get_available_products(current_user: User = Depends(get_current_user)):
@@ -73,6 +93,22 @@ async def get_available_products(current_user: User = Depends(get_current_user))
         })
     
     return {"products": products}
+
+@router.get('/workspaces')
+async def get_available_workspaces(current_user: User = Depends(get_current_user)):
+    """Get all available workspaces that can be assigned to products"""
+    require_admin(current_user)
+    
+    workspaces = [
+        {"id": "dispatch_operations", "name": "Dispatch Ops", "description": "Dispatch and operations management"},
+        {"id": "accounting", "name": "Accounting", "description": "Financial and accounting tools"},
+        {"id": "sales_business_dev", "name": "Sales/BD", "description": "Sales and business development"},
+        {"id": "hr", "name": "HR", "description": "Human resources management"},
+        {"id": "fleet_maintenance", "name": "Fleet Maintenance", "description": "Vehicle maintenance tracking"},
+        {"id": "fleet_safety", "name": "Fleet Safety", "description": "Safety compliance and monitoring"}
+    ]
+    
+    return {"workspaces": workspaces}
 
 # Subscription Assignment Operations - Must be before /{bundle_id} routes
 @router.get('/assignments')
@@ -293,6 +329,9 @@ async def get_bundles(
             if plan:
                 prod["product_name"] = plan.get("tier", plan.get("label", prod.get("product_id")))
                 prod["product_price"] = plan.get("price", 0)
+            # Ensure workspaces array exists
+            if "workspaces" not in prod:
+                prod["workspaces"] = []
             enriched_products.append(prod)
         bundle["products"] = enriched_products
     
@@ -314,6 +353,9 @@ async def get_bundle(bundle_id: str, current_user: User = Depends(get_current_us
         if plan:
             prod["product_name"] = plan.get("tier", plan.get("label", prod.get("product_id")))
             prod["product_price"] = plan.get("price", 0)
+        # Ensure workspaces array exists
+        if "workspaces" not in prod:
+            prod["workspaces"] = []
         enriched_products.append(prod)
     bundle["products"] = enriched_products
     
@@ -324,11 +366,23 @@ async def create_bundle(bundle_data: BundleCreate, current_user: User = Depends(
     """Create a new product bundle"""
     require_admin(current_user)
     
-    # Validate products exist
+    # Validate products exist and process workspaces
+    processed_products = []
     for prod in bundle_data.products:
         plan = next((p for p in PLANS if p["id"] == prod.product_id), None)
         if not plan:
             raise HTTPException(status_code=400, detail=f"Product {prod.product_id} not found")
+        
+        # Validate and deduplicate workspaces
+        validated_workspaces = validate_workspaces(prod.workspaces)
+        
+        processed_products.append({
+            "product_id": prod.product_id,
+            "product_name": prod.product_name,
+            "included_seats": prod.included_seats,
+            "included_storage_gb": prod.included_storage_gb,
+            "workspaces": validated_workspaces
+        })
     
     # Calculate original price if not provided
     original_price = bundle_data.original_price
@@ -356,7 +410,7 @@ async def create_bundle(bundle_data: BundleCreate, current_user: User = Depends(
         "id": str(uuid.uuid4()),
         "name": bundle_data.name,
         "description": bundle_data.description,
-        "products": [p.dict() for p in bundle_data.products],
+        "products": processed_products,
         "monthly_price": bundle_data.monthly_price,
         "original_price": original_price,
         "discount_percentage": discount_percentage,
@@ -399,12 +453,24 @@ async def update_bundle(
     if bundle_data.description is not None:
         update_data["description"] = bundle_data.description
     if bundle_data.products is not None:
-        # Validate products
+        # Validate products and process workspaces
+        processed_products = []
         for prod in bundle_data.products:
             plan = next((p for p in PLANS if p["id"] == prod.product_id), None)
             if not plan:
                 raise HTTPException(status_code=400, detail=f"Product {prod.product_id} not found")
-        update_data["products"] = [p.dict() for p in bundle_data.products]
+            
+            # Validate and deduplicate workspaces
+            validated_workspaces = validate_workspaces(prod.workspaces)
+            
+            processed_products.append({
+                "product_id": prod.product_id,
+                "product_name": prod.product_name,
+                "included_seats": prod.included_seats,
+                "included_storage_gb": prod.included_storage_gb,
+                "workspaces": validated_workspaces
+            })
+        update_data["products"] = processed_products
     if bundle_data.monthly_price is not None:
         update_data["monthly_price"] = bundle_data.monthly_price
     if bundle_data.original_price is not None:

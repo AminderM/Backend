@@ -32,6 +32,9 @@ class UserRole(str, Enum):
     BILLING = "billing"                # Finance, invoicing, AR/AP
     VIEWER = "viewer"                  # Read-only access
     
+    # Website web tools users (separate portal, separate tenancy)
+    WEB_TOOLS_USER = "web_tools_user"
+
     # Legacy roles (kept for backward compatibility - will be auto-migrated)
     COMPANY_ADMIN = "company_admin"    # → maps to ADMIN
     ACCOUNTANT = "accountant"          # → maps to BILLING
@@ -56,6 +59,7 @@ ROLE_MIGRATION_MAP = {
     "accounts_payable": "billing",
     "hr": "manager",
     # These stay the same
+    "web_tools_user": "web_tools_user",
     "platform_admin": "platform_admin",
     "admin": "admin",
     "manager": "manager",
@@ -280,7 +284,20 @@ class User(UserBase):
     registration_status: RegistrationStatus = RegistrationStatus.PENDING
     verification_token: Optional[str] = None
     token_expires_at: Optional[datetime] = None
-    
+
+    # Social / OAuth providers
+    auth_provider: str = "email"        # "email" | "google" | "apple"
+    google_id: Optional[str] = None
+    apple_id: Optional[str] = None
+
+    # Email OTP
+    otp_code: Optional[str] = None      # SHA-256 hashed 6-digit code
+    otp_expires_at: Optional[datetime] = None
+    otp_attempts: int = 0
+
+    # Portal identification — which product this user belongs to
+    portal: str = "tms"                      # "tms" | "website" | "admin"
+
     # Multi-Tenancy
     tenant_id: Optional[str] = None          # FK to companies/tenants
     fleet_owner_id: Optional[str] = None     # Legacy - for backward compatibility

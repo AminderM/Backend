@@ -103,6 +103,11 @@ jobs:
           MAIL_SERVER: ${{ secrets.MAIL_SERVER }}
           MAIL_PORT: ${{ secrets.MAIL_PORT }}
           FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          STRIPE_PRO_MONTHLY_PRICE_ID: ${{ secrets.STRIPE_PRO_MONTHLY_PRICE_ID }}
+          STRIPE_PRO_ANNUAL_PRICE_ID: ${{ secrets.STRIPE_PRO_ANNUAL_PRICE_ID }}
+          STRIPE_ENTERPRISE_MONTHLY_PRICE_ID: ${{ secrets.STRIPE_ENTERPRISE_MONTHLY_PRICE_ID }}
+          STRIPE_ENTERPRISE_ANNUAL_PRICE_ID: ${{ secrets.STRIPE_ENTERPRISE_ANNUAL_PRICE_ID }}
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} \
             MONGO_URL="${MONGO_URL}" \
@@ -119,6 +124,11 @@ jobs:
             MAIL_SERVER="${MAIL_SERVER}" \
             MAIL_PORT="${MAIL_PORT}" \
             FRONTEND_URL="${FRONTEND_URL}" \
+            GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
+            STRIPE_PRO_MONTHLY_PRICE_ID="${STRIPE_PRO_MONTHLY_PRICE_ID}" \
+            STRIPE_PRO_ANNUAL_PRICE_ID="${STRIPE_PRO_ANNUAL_PRICE_ID}" \
+            STRIPE_ENTERPRISE_MONTHLY_PRICE_ID="${STRIPE_ENTERPRISE_MONTHLY_PRICE_ID}" \
+            STRIPE_ENTERPRISE_ANNUAL_PRICE_ID="${STRIPE_ENTERPRISE_ANNUAL_PRICE_ID}" \
             bash << 'EOF'
             set -e
             echo "🚀 Starting PRODUCTION deployment..."
@@ -163,10 +173,11 @@ jobs:
               echo "MAIL_SERVER=${MAIL_SERVER}"
               echo "MAIL_PORT=${MAIL_PORT}"
               echo "FRONTEND_URL=${FRONTEND_URL}"
-              echo "STRIPE_PRO_MONTHLY_PRICE_ID=price_1TJknt2RlryGhznrBiYE9Ekg"
-              echo "STRIPE_PRO_ANNUAL_PRICE_ID=price_1TJmSC2RlryGhznry7CYYVbf"
-              echo "STRIPE_ENTERPRISE_MONTHLY_PRICE_ID=price_1TJktY2RlryGhznrOb6ktS6H"
-              echo "STRIPE_ENTERPRISE_ANNUAL_PRICE_ID=price_1TJmTS2RlryGhznrgybbbWTv"
+              echo "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
+              echo "STRIPE_PRO_MONTHLY_PRICE_ID=${STRIPE_PRO_MONTHLY_PRICE_ID}"
+              echo "STRIPE_PRO_ANNUAL_PRICE_ID=${STRIPE_PRO_ANNUAL_PRICE_ID}"
+              echo "STRIPE_ENTERPRISE_MONTHLY_PRICE_ID=${STRIPE_ENTERPRISE_MONTHLY_PRICE_ID}"
+              echo "STRIPE_ENTERPRISE_ANNUAL_PRICE_ID=${STRIPE_ENTERPRISE_ANNUAL_PRICE_ID}"
             } > .env
             echo "✅ .env written"
 

@@ -185,10 +185,12 @@ def require_billing(current_user: User = Depends(get_current_user)):
 
 
 def require_web_user(current_user: User = Depends(get_current_user)):
-    """Dependency to restrict endpoint to website web tools users only."""
+    """Dependency to restrict endpoint to website web tools users and platform admins."""
     role = get_normalized_role(current_user)
     portal = getattr(current_user, "portal", "tms")
-    if role != "web_tools_user" or portal != "website":
+    is_web_user = role == "web_tools_user" and portal == "website"
+    is_platform_admin = role == "platform_admin"
+    if not is_web_user and not is_platform_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: this endpoint is for website users only.",

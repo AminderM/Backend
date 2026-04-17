@@ -19,6 +19,13 @@ router = APIRouter(prefix="/user", tags=["User Profile"])
 class ProfileUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
+    company: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip: Optional[str] = None
+    mc_number: Optional[str] = None
+    dot_number: Optional[str] = None
 
 
 class PasswordUpdate(BaseModel):
@@ -39,6 +46,13 @@ async def get_profile(current_user=Depends(require_web_user)):
         "phone": getattr(current_user, "phone", None),
         "email": current_user.email,
         "auth_provider": getattr(current_user, "auth_provider", "email"),
+        "company": getattr(current_user, "company", None),
+        "address": getattr(current_user, "address", None),
+        "city": getattr(current_user, "city", None),
+        "state": getattr(current_user, "state", None),
+        "zip": getattr(current_user, "zip", None),
+        "mc_number": getattr(current_user, "mc_number", None),
+        "dot_number": getattr(current_user, "dot_number", None),
         "created_at": (
             current_user.created_at.isoformat()
             if isinstance(getattr(current_user, "created_at", None), datetime)
@@ -56,10 +70,10 @@ async def update_profile(body: ProfileUpdate, current_user=Depends(require_web_u
     """Update full_name and/or phone for the authenticated user."""
     updates: dict = {"updated_at": datetime.now(timezone.utc).isoformat()}
 
-    if body.full_name is not None:
-        updates["full_name"] = body.full_name
-    if body.phone is not None:
-        updates["phone"] = body.phone
+    for field in ["full_name", "phone", "company", "address", "city", "state", "zip", "mc_number", "dot_number"]:
+        val = getattr(body, field, None)
+        if val is not None:
+            updates[field] = val
 
     result = await db.users.update_one(
         {"id": str(current_user.id)},

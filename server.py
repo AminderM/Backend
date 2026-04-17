@@ -46,6 +46,7 @@ from routes import fuel_surcharge_routes
 from routes import invoice_routes
 from routes import convert_routes
 from routes import user_profile_routes
+from routes import stripe_routes
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -103,6 +104,7 @@ api_router.include_router(fuel_surcharge_routes.router)
 api_router.include_router(invoice_routes.router)
 api_router.include_router(convert_routes.router)
 api_router.include_router(user_profile_routes.router)
+api_router.include_router(stripe_routes.router)
 
 # WebSocket endpoint for real-time vehicle tracking
 @api_router.websocket("/ws/vehicle/{vehicle_id}")

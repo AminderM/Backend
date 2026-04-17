@@ -94,6 +94,7 @@ jobs:
           JWT_SECRET: ${{ vars.JWT_SECRET }}
           EMERGENT_LLM_KEY: ${{ vars.EMERGENT_LLM_KEY }}
           FMCSA_API_KEY: ${{ vars.FMCSA_API_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} \
             MONGO_URL="${MONGO_URL}" \
@@ -101,6 +102,7 @@ jobs:
             JWT_SECRET="${JWT_SECRET}" \
             EMERGENT_LLM_KEY="${EMERGENT_LLM_KEY}" \
             FMCSA_API_KEY="${FMCSA_API_KEY}" \
+            GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
             bash << 'EOF'
             set -e
             echo "🚀 Starting PRODUCTION deployment..."
@@ -136,6 +138,7 @@ jobs:
               echo "JWT_SECRET=${JWT_SECRET}"
               echo "EMERGENT_LLM_KEY=${EMERGENT_LLM_KEY}"
               echo "FMCSA_API_KEY=${FMCSA_API_KEY}"
+              echo "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
             } > .env
             echo "✅ .env written"
 

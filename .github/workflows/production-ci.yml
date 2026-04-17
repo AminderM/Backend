@@ -103,22 +103,36 @@ jobs:
           MAIL_SERVER: ${{ secrets.MAIL_SERVER }}
           MAIL_PORT: ${{ secrets.MAIL_PORT }}
           FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          STRIPE_PRO_MONTHLY_PRICE_ID: ${{ secrets.STRIPE_PRO_MONTHLY_PRICE_ID }}
+          STRIPE_PRO_ANNUAL_PRICE_ID: ${{ secrets.STRIPE_PRO_ANNUAL_PRICE_ID }}
+          STRIPE_ENTERPRISE_MONTHLY_PRICE_ID: ${{ secrets.STRIPE_ENTERPRISE_MONTHLY_PRICE_ID }}
+          STRIPE_ENTERPRISE_ANNUAL_PRICE_ID: ${{ secrets.STRIPE_ENTERPRISE_ANNUAL_PRICE_ID }}
         run: |
+          # Build .env content locally (secrets are plain env vars here — no SSH escaping issues)
+          # Then base64-encode so special chars (@, /, etc.) pass through SSH safely
+          ENV_B64=$(printf '%s\n' \
+            "MONGO_URL=${MONGO_URL}" \
+            "DB_NAME=fleetdb_prod" \
+            "JWT_SECRET=${JWT_SECRET}" \
+            "EMERGENT_LLM_KEY=${EMERGENT_LLM_KEY}" \
+            "FMCSA_API_KEY=${FMCSA_API_KEY}" \
+            "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}" \
+            "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}" \
+            "MAIL_USERNAME=${MAIL_USERNAME}" \
+            "MAIL_PASSWORD=${MAIL_PASSWORD}" \
+            "MAIL_FROM=${MAIL_FROM}" \
+            "MAIL_FROM_NAME=${MAIL_FROM_NAME}" \
+            "MAIL_SERVER=${MAIL_SERVER}" \
+            "MAIL_PORT=${MAIL_PORT}" \
+            "FRONTEND_URL=${FRONTEND_URL}" \
+            "STRIPE_PRO_MONTHLY_PRICE_ID=${STRIPE_PRO_MONTHLY_PRICE_ID}" \
+            "STRIPE_PRO_ANNUAL_PRICE_ID=${STRIPE_PRO_ANNUAL_PRICE_ID}" \
+            "STRIPE_ENTERPRISE_MONTHLY_PRICE_ID=${STRIPE_ENTERPRISE_MONTHLY_PRICE_ID}" \
+            "STRIPE_ENTERPRISE_ANNUAL_PRICE_ID=${STRIPE_ENTERPRISE_ANNUAL_PRICE_ID}" \
+            | base64 -w0)
+
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} \
-            MONGO_URL="${MONGO_URL}" \
-            DB_NAME="fleetdb_prod" \
-            JWT_SECRET="${JWT_SECRET}" \
-            EMERGENT_LLM_KEY="${EMERGENT_LLM_KEY}" \
-            FMCSA_API_KEY="${FMCSA_API_KEY}" \
-            STRIPE_SECRET_KEY="${STRIPE_SECRET_KEY}" \
-            STRIPE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET}" \
-            MAIL_USERNAME="${MAIL_USERNAME}" \
-            MAIL_PASSWORD="${MAIL_PASSWORD}" \
-            MAIL_FROM="${MAIL_FROM}" \
-            MAIL_FROM_NAME="${MAIL_FROM_NAME}" \
-            MAIL_SERVER="${MAIL_SERVER}" \
-            MAIL_PORT="${MAIL_PORT}" \
-            FRONTEND_URL="${FRONTEND_URL}" \
+            ENV_B64="${ENV_B64}" \
             bash << 'EOF'
             set -e
             echo "🚀 Starting PRODUCTION deployment..."
@@ -146,28 +160,9 @@ jobs:
             git checkout main
             git reset --hard origin/main
 
-            # ── Write .env file from GitHub vars (overwrites each deploy) ─────
+            # ── Write .env from base64-encoded content ────────────────────────
             echo "📝 Writing production .env file..."
-            {
-              echo "MONGO_URL=${MONGO_URL}"
-              echo "DB_NAME=fleetdb_prod"
-              echo "JWT_SECRET=${JWT_SECRET}"
-              echo "EMERGENT_LLM_KEY=${EMERGENT_LLM_KEY}"
-              echo "FMCSA_API_KEY=${FMCSA_API_KEY}"
-              echo "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}"
-              echo "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}"
-              echo "MAIL_USERNAME=${MAIL_USERNAME}"
-              echo "MAIL_PASSWORD=${MAIL_PASSWORD}"
-              echo "MAIL_FROM=${MAIL_FROM}"
-              echo "MAIL_FROM_NAME=${MAIL_FROM_NAME}"
-              echo "MAIL_SERVER=${MAIL_SERVER}"
-              echo "MAIL_PORT=${MAIL_PORT}"
-              echo "FRONTEND_URL=${FRONTEND_URL}"
-              echo "STRIPE_PRO_MONTHLY_PRICE_ID=price_1TJknt2RlryGhznrBiYE9Ekg"
-              echo "STRIPE_PRO_ANNUAL_PRICE_ID=price_1TJmSC2RlryGhznry7CYYVbf"
-              echo "STRIPE_ENTERPRISE_MONTHLY_PRICE_ID=price_1TJktY2RlryGhznrOb6ktS6H"
-              echo "STRIPE_ENTERPRISE_ANNUAL_PRICE_ID=price_1TJmTS2RlryGhznrgybbbWTv"
-            } > .env
+            echo "$ENV_B64" | base64 -d > .env
             echo "✅ .env written"
 
             # ── Create venv if it doesn't exist ───────────────────────────────

@@ -184,6 +184,32 @@ def require_billing(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+def require_web_user(current_user: User = Depends(get_current_user)):
+    """Dependency to restrict endpoint to website web tools users and platform admins."""
+    role = get_normalized_role(current_user)
+    portal = getattr(current_user, "portal", "tms")
+    is_web_user = role == "web_tools_user" and portal == "website"
+    is_platform_admin = role == "platform_admin"
+    if not is_web_user and not is_platform_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: this endpoint is for website users only.",
+        )
+    return current_user
+
+
+def require_tms_user(current_user: User = Depends(get_current_user)):
+    """Dependency to block website users from TMS endpoints."""
+    role = get_normalized_role(current_user)
+    portal = getattr(current_user, "portal", "tms")
+    if role == "web_tools_user" or portal == "website":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: this endpoint is not available for website users.",
+        )
+    return current_user
+
+
 def require_role(allowed_roles: List[str]):
     """
     Factory function to create a dependency that requires specific roles

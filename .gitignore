@@ -30,7 +30,6 @@ seed_*.py
 reset_admin.py
 *.md
 
-.env
 # CI/CD
 deploy.tar.gz
 build.tar.gz
@@ -38,16 +37,14 @@ build.tar.gz
 # PM2
 .pm2
 logs/
-*.log
--e 
+
 # Environment files
 *.env
 *.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
+
+# Secrets
+client_secret*.json
+
+# Temp files
+temp_auto_push.bat
+temp_interactive_push.bat

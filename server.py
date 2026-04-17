@@ -1,7 +1,7 @@
-from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 from pathlib import Path
 import os
@@ -41,6 +41,12 @@ from routes import marketing_routes
 from routes import customer_analytics_routes
 from routes import dashboard_routes
 from routes import scheduled_reports
+from routes import history_routes
+from routes import fuel_surcharge_routes
+from routes import invoice_routes
+from routes import convert_routes
+from routes import user_profile_routes
+from routes import stripe_routes
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -53,6 +59,15 @@ customer_analytics_routes.set_websocket_manager(manager)
 
 # Create the main app
 app = FastAPI(title="Fleet Marketplace API")
+
+# Global exception handler — ensures all errors return JSON, never HTML
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logging.error(f"Unhandled exception on {request.method} {request.url}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error", "detail": str(exc)},
+    )
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -84,6 +99,12 @@ api_router.include_router(marketing_routes.router)
 api_router.include_router(customer_analytics_routes.router)
 api_router.include_router(dashboard_routes.router)
 api_router.include_router(scheduled_reports.router)
+api_router.include_router(history_routes.router)
+api_router.include_router(fuel_surcharge_routes.router)
+api_router.include_router(invoice_routes.router)
+api_router.include_router(convert_routes.router)
+api_router.include_router(user_profile_routes.router)
+api_router.include_router(stripe_routes.router)
 
 # WebSocket endpoint for real-time vehicle tracking
 @api_router.websocket("/ws/vehicle/{vehicle_id}")
@@ -284,6 +305,16 @@ async def startup_seed_admin():
             logging.info(f"✅ Platform admin already exists: {admin_email}")
     except Exception as e:
         logging.error(f"⚠️ Failed to seed platform admin: {str(e)}")
+
+@app.on_event("startup")
+async def startup_invoice_indexes():
+    """Create indexes for the invoices collection"""
+    try:
+        await db["invoices"].create_index([("user_id", 1), ("created_at", -1)])
+        await db["invoices"].create_index("invoice_number")
+        logging.info("✅ Invoice indexes created")
+    except Exception as e:
+        logging.error(f"⚠️ Failed to create invoice indexes: {str(e)}")
 
 @app.on_event("startup")
 async def startup_scheduler():

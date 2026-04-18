@@ -71,8 +71,16 @@ async def create_checkout_session(request: Request, current_user=Depends(require
     user_id = str(current_user.id)
     email = current_user.email
 
-    # Get or create Stripe customer
+    # Get or create Stripe customer — also handles stale test-mode customer IDs
     stripe_customer_id = getattr(current_user, "stripe_customer_id", None)
+
+    if stripe_customer_id:
+        try:
+            stripe.Customer.retrieve(stripe_customer_id)
+        except stripe.InvalidRequestError:
+            logger.warning(f"Stripe customer {stripe_customer_id} not found in live mode, creating new one")
+            stripe_customer_id = None
+
     if not stripe_customer_id:
         customer = stripe.Customer.create(
             email=email,

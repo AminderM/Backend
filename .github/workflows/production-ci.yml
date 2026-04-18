@@ -85,51 +85,40 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.EC2_HOST || vars.EC2_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Write .env to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST || vars.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER || vars.EC2_USER || 'ubuntu' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} \
+            "cat > ~/apps/production/Backend/.env" << 'ENVEOF'
+          MONGO_URL=${{ secrets.MONGO_URL }}
+          DB_NAME=fleetdb_prod
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          EMERGENT_LLM_KEY=${{ secrets.EMERGENT_LLM_KEY }}
+          FMCSA_API_KEY=${{ secrets.FMCSA_API_KEY }}
+          STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}
+          MAIL_FROM=${{ secrets.MAIL_FROM }}
+          MAIL_FROM_NAME=${{ secrets.MAIL_FROM_NAME }}
+          MAIL_SERVER=${{ secrets.MAIL_SERVER }}
+          MAIL_PORT=${{ secrets.MAIL_PORT }}
+          FRONTEND_URL=${{ secrets.FRONTEND_URL }}
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          STRIPE_PRO_MONTHLY_PRICE_ID=${{ secrets.STRIPE_PRO_MONTHLY_PRICE_ID }}
+          STRIPE_PRO_ANNUAL_PRICE_ID=${{ secrets.STRIPE_PRO_ANNUAL_PRICE_ID }}
+          STRIPE_ENTERPRISE_MONTHLY_PRICE_ID=${{ secrets.STRIPE_ENTERPRISE_MONTHLY_PRICE_ID }}
+          STRIPE_ENTERPRISE_ANNUAL_PRICE_ID=${{ secrets.STRIPE_ENTERPRISE_ANNUAL_PRICE_ID }}
+          ENVEOF
+
       - name: Deploy to EC2
         env:
           EC2_HOST: ${{ secrets.EC2_HOST || vars.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER || vars.EC2_USER || 'ubuntu' }}
-          MONGO_URL: ${{ vars.MONGO_URL }}
-          DB_NAME: ${{ vars.DB_NAME }}
-          JWT_SECRET: ${{ vars.JWT_SECRET }}
-          EMERGENT_LLM_KEY: ${{ vars.EMERGENT_LLM_KEY }}
-          FMCSA_API_KEY: ${{ vars.FMCSA_API_KEY }}
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
-          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
-          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
-          MAIL_FROM: ${{ secrets.MAIL_FROM }}
-          MAIL_FROM_NAME: ${{ secrets.MAIL_FROM_NAME }}
-          MAIL_SERVER: ${{ secrets.MAIL_SERVER }}
-          MAIL_PORT: ${{ secrets.MAIL_PORT }}
-          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          STRIPE_PRO_MONTHLY_PRICE_ID: ${{ secrets.STRIPE_PRO_MONTHLY_PRICE_ID }}
-          STRIPE_PRO_ANNUAL_PRICE_ID: ${{ secrets.STRIPE_PRO_ANNUAL_PRICE_ID }}
-          STRIPE_ENTERPRISE_MONTHLY_PRICE_ID: ${{ secrets.STRIPE_ENTERPRISE_MONTHLY_PRICE_ID }}
-          STRIPE_ENTERPRISE_ANNUAL_PRICE_ID: ${{ secrets.STRIPE_ENTERPRISE_ANNUAL_PRICE_ID }}
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} \
-            MONGO_URL="${MONGO_URL}" \
-            DB_NAME="fleetdb_prod" \
-            JWT_SECRET="${JWT_SECRET}" \
-            EMERGENT_LLM_KEY="${EMERGENT_LLM_KEY}" \
-            FMCSA_API_KEY="${FMCSA_API_KEY}" \
-            STRIPE_SECRET_KEY="${STRIPE_SECRET_KEY}" \
-            STRIPE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET}" \
-            MAIL_USERNAME="${MAIL_USERNAME}" \
-            MAIL_PASSWORD="${MAIL_PASSWORD}" \
-            MAIL_FROM="${MAIL_FROM}" \
-            MAIL_FROM_NAME="${MAIL_FROM_NAME}" \
-            MAIL_SERVER="${MAIL_SERVER}" \
-            MAIL_PORT="${MAIL_PORT}" \
-            FRONTEND_URL="${FRONTEND_URL}" \
-            GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
-            STRIPE_PRO_MONTHLY_PRICE_ID="${STRIPE_PRO_MONTHLY_PRICE_ID}" \
-            STRIPE_PRO_ANNUAL_PRICE_ID="${STRIPE_PRO_ANNUAL_PRICE_ID}" \
-            STRIPE_ENTERPRISE_MONTHLY_PRICE_ID="${STRIPE_ENTERPRISE_MONTHLY_PRICE_ID}" \
-            STRIPE_ENTERPRISE_ANNUAL_PRICE_ID="${STRIPE_ENTERPRISE_ANNUAL_PRICE_ID}" \
-            bash << 'EOF'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} bash << 'EOF'
             set -e
             echo "🚀 Starting PRODUCTION deployment..."
 
@@ -155,31 +144,7 @@ jobs:
             git fetch origin
             git checkout main
             git reset --hard origin/main
-
-            # ── Write .env file from GitHub vars (overwrites each deploy) ─────
-            echo "📝 Writing production .env file..."
-            {
-              echo "MONGO_URL=${MONGO_URL}"
-              echo "DB_NAME=fleetdb_prod"
-              echo "JWT_SECRET=${JWT_SECRET}"
-              echo "EMERGENT_LLM_KEY=${EMERGENT_LLM_KEY}"
-              echo "FMCSA_API_KEY=${FMCSA_API_KEY}"
-              echo "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}"
-              echo "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}"
-              echo "MAIL_USERNAME=${MAIL_USERNAME}"
-              echo "MAIL_PASSWORD=${MAIL_PASSWORD}"
-              echo "MAIL_FROM=${MAIL_FROM}"
-              echo "MAIL_FROM_NAME=${MAIL_FROM_NAME}"
-              echo "MAIL_SERVER=${MAIL_SERVER}"
-              echo "MAIL_PORT=${MAIL_PORT}"
-              echo "FRONTEND_URL=${FRONTEND_URL}"
-              echo "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
-              echo "STRIPE_PRO_MONTHLY_PRICE_ID=${STRIPE_PRO_MONTHLY_PRICE_ID}"
-              echo "STRIPE_PRO_ANNUAL_PRICE_ID=${STRIPE_PRO_ANNUAL_PRICE_ID}"
-              echo "STRIPE_ENTERPRISE_MONTHLY_PRICE_ID=${STRIPE_ENTERPRISE_MONTHLY_PRICE_ID}"
-              echo "STRIPE_ENTERPRISE_ANNUAL_PRICE_ID=${STRIPE_ENTERPRISE_ANNUAL_PRICE_ID}"
-            } > .env
-            echo "✅ .env written"
+            echo "✅ .env preserved (written in previous step)"
 
             # ── Create venv if it doesn't exist ───────────────────────────────
             if [ ! -d "venv" ]; then
